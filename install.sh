@@ -75,23 +75,23 @@ handle_choice() {
     case "$choice" in
 
         1)
-            bash "$SCRIPT_DIR/docker.sh"
+            bash "$SCRIPT_DIR/Scripts/docker.sh"
             ;;
 
         2)
-            bash "$SCRIPT_DIR/kubernetes.sh"
+            bash "$SCRIPT_DIR/Scripts/kubernetes.sh"
             ;;
 
         3)
-            bash "$SCRIPT_DIR/jenkins.sh"
+            bash "$SCRIPT_DIR/Scripts/jenkins.sh"
             ;;
 
         4)
-            bash "$SCRIPT_DIR/prometheus.sh"
+            bash "$SCRIPT_DIR/Scripts/prometheus.sh"
             ;;
 
         5)
-            bash "$SCRIPT_DIR/grafana.sh"
+            bash "$SCRIPT_DIR/Scripts/grafana.sh"
             ;;
 
         6)
