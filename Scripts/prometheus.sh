@@ -146,99 +146,86 @@ download_prometheus() {
 
     DOWNLOAD_URL="https://github.com/prometheus/prometheus/releases/download/${PROM_VERSION}/prometheus-${PROM_VERSION#v}.linux-${PROM_ARCH}.tar.gz"
 
-    curl -fL "$DOWNLOAD_URL" \
-        -o prometheus.tar.gz
+    ARCHIVE="/tmp/prometheus.tar.gz"
 
-    tar -xzf prometheus.tar.gz
+    # Remove previous archive
+    rm -f "$ARCHIVE"
 
-    EXTRACTED_DIR="/tmp/prometheus-${PROM_VERSION#v}.linux-${PROM_ARCH}"
+    # Download
+    curl -fL "$DOWNLOAD_URL" -o "$ARCHIVE"
 
-    if [[ ! -d "$EXTRACTED_DIR" ]]; then
-        error "Prometheus archive extraction failed."
+    success "Prometheus archive downloaded."
+
+    # Extract
+    info "Extracting Prometheus archive..."
+
+    rm -rf /tmp/prometheus-extracted
+
+    mkdir -p /tmp/prometheus-extracted
+
+    tar -xzf "$ARCHIVE" -C /tmp/prometheus-extracted
+
+    # Find extracted directory
+    EXTRACTED_DIR="$(find /tmp/prometheus-extracted \
+        -maxdepth 1 \
+        -type d \
+        -name 'prometheus-*' \
+        | head -n 1)"
+
+    if [[ -z "$EXTRACTED_DIR" ]]; then
+        error "Unable to locate extracted Prometheus directory."
         exit 1
     fi
 
-    cp "$EXTRACTED_DIR/prometheus" "$PROMETHEUS_INSTALL_DIR/"
-    cp "$EXTRACTED_DIR/promtool" "$PROMETHEUS_INSTALL_DIR/"
+    info "Extracted directory: $EXTRACTED_DIR"
 
+    # Check Prometheus binary
+    if [[ ! -f "$EXTRACTED_DIR/prometheus" ]]; then
+        error "Prometheus binary was not found."
+        exit 1
+    fi
+
+    # Check Promtool binary
+    if [[ ! -f "$EXTRACTED_DIR/promtool" ]]; then
+        error "Promtool binary was not found."
+        exit 1
+    fi
+
+    # Install binaries
+    info "Installing Prometheus binaries..."
+
+    install -m 0755 \
+        "$EXTRACTED_DIR/prometheus" \
+        "$PROMETHEUS_INSTALL_DIR/prometheus"
+
+    install -m 0755 \
+        "$EXTRACTED_DIR/promtool" \
+        "$PROMETHEUS_INSTALL_DIR/promtool"
+
+    # Create directories
     mkdir -p "$PROMETHEUS_DIR"
     mkdir -p "$PROMETHEUS_DATA_DIR"
 
-    cp -r "$EXTRACTED_DIR/consoles" "$PROMETHEUS_DIR/"
-    cp -r "$EXTRACTED_DIR/console_libraries" "$PROMETHEUS_DIR/"
-    cp "$EXTRACTED_DIR/prometheus.yml" "$PROMETHEUS_DIR/"
+    # Copy configuration
+    if [[ -f "$EXTRACTED_DIR/prometheus.yml" ]]; then
 
+        cp "$EXTRACTED_DIR/prometheus.yml" \
+            "$PROMETHEUS_DIR/prometheus.yml"
+
+    else
+
+        error "prometheus.yml was not found."
+        exit 1
+
+    fi
+
+    # Set ownership
     chown -R "$PROMETHEUS_USER:$PROMETHEUS_USER" \
         "$PROMETHEUS_DIR" \
         "$PROMETHEUS_DATA_DIR" \
         "$PROMETHEUS_INSTALL_DIR"
 
-    success "Prometheus downloaded and installed."
-}
-
-# ==========================================
-# Create Systemd Service
-# ==========================================
-
-create_prometheus_service() {
-
-    info "Creating Prometheus systemd service..."
-
-    cat > /etc/systemd/system/prometheus.service <<EOF
-[Unit]
-Description=Prometheus Monitoring System
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-User=$PROMETHEUS_USER
-Group=$PROMETHEUS_USER
-Type=simple
-
-ExecStart=$PROMETHEUS_INSTALL_DIR/prometheus \
-  --config.file=$PROMETHEUS_DIR/prometheus.yml \
-  --storage.tsdb.path=$PROMETHEUS_DATA_DIR \
-  --web.console.templates=$PROMETHEUS_DIR/consoles \
-  --web.console.libraries=$PROMETHEUS_DIR/console_libraries
-
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    systemctl daemon-reload
-
-    systemctl enable prometheus
-    systemctl start prometheus
-
-    success "Prometheus service created and started."
-}
-
-# ==========================================
-# Verify Prometheus
-# ==========================================
-
-verify_prometheus() {
-
-    info "Verifying Prometheus..."
-
-    if ! systemctl is-active --quiet prometheus; then
-        error "Prometheus service is not running."
-        systemctl status prometheus --no-pager
-        exit 1
-    fi
-
-    if curl -fsS http://127.0.0.1:9090/-/ready >/dev/null 2>&1; then
-        success "Prometheus web service is responding on port 9090."
-    else
-        warning "Prometheus is running but the HTTP endpoint is not ready yet."
-    fi
-
-    "$PROMETHEUS_INSTALL_DIR/prometheus" \
-        --version 2>/dev/null || true
-
-    success "Prometheus verification completed."
+    success "Prometheus files installed successfully."
 }
 
 # ==========================================
