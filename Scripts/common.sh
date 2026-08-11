@@ -4,15 +4,16 @@
 # DevOps Auto Installer - Common Functions
 # ==========================================
 
-# Stop script when a command fails
 set -e
 
-# Project directories
+# ==========================================
+# Project Directories
+# ==========================================
+
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$PROJECT_ROOT/logs"
 LOG_FILE="$LOG_DIR/installer.log"
 
-# Create log directory
 mkdir -p "$LOG_DIR"
 
 # ==========================================
@@ -26,7 +27,6 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-
 # ==========================================
 # Logging
 # ==========================================
@@ -34,7 +34,6 @@ NC='\033[0m'
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
 }
-
 
 # ==========================================
 # Message Functions
@@ -60,7 +59,6 @@ error() {
     log "[ERROR] $1"
 }
 
-
 # ==========================================
 # Root / Privilege Check
 # ==========================================
@@ -75,7 +73,6 @@ check_root() {
 
     success "Root privileges confirmed."
 }
-
 
 # ==========================================
 # Operating System Detection
@@ -97,7 +94,6 @@ detect_os() {
     info "Operating System: $OS_PRETTY_NAME"
 }
 
-
 # ==========================================
 # Architecture Detection
 # ==========================================
@@ -108,7 +104,6 @@ detect_architecture() {
 
     info "System Architecture: $ARCHITECTURE"
 }
-
 
 # ==========================================
 # Internet Connectivity Check
@@ -126,7 +121,6 @@ check_internet() {
     fi
 }
 
-
 # ==========================================
 # Command Existence Check
 # ==========================================
@@ -136,7 +130,6 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-
 # ==========================================
 # Create Required Directories
 # ==========================================
@@ -144,12 +137,10 @@ command_exists() {
 create_directories() {
 
     mkdir -p "$LOG_DIR"
-
     touch "$LOG_FILE"
 
     success "Required directories verified."
 }
-
 
 # ==========================================
 # System Information
@@ -169,7 +160,6 @@ show_system_info() {
     echo
 }
 
-
 # ==========================================
 # Common Initialization
 # ==========================================
@@ -184,3 +174,14 @@ initialize() {
 
     log "Installer initialization completed."
 }
+
+# ==========================================
+# Standalone Test
+# ==========================================
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+
+    initialize
+    show_system_info
+
+fi
