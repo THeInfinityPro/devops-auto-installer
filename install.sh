@@ -75,35 +75,35 @@ handle_choice() {
     case "$choice" in
 
         1)
-            info "Docker installer will be added in the next phase."
+            bash "$SCRIPT_DIR/docker.sh"
             ;;
 
         2)
-            info "Kubernetes installer will be added in the next phase."
+            bash "$SCRIPT_DIR/kubernetes.sh"
             ;;
 
         3)
-            info "Jenkins installer will be added in the next phase."
+            bash "$SCRIPT_DIR/jenkins.sh"
             ;;
 
         4)
-            info "Prometheus installer will be added in the next phase."
+            bash "$SCRIPT_DIR/prometheus.sh"
             ;;
 
         5)
-            info "Grafana installer will be added in the next phase."
+            bash "$SCRIPT_DIR/grafana.sh"
             ;;
 
         6)
-            info "Complete installation will be added after all installers are created."
+            install_everything
             ;;
 
         7)
-            info "Verification module will be added later."
+            warning "Verification script has not been created yet."
             ;;
 
         8)
-            info "Uninstall module will be added later."
+            warning "Uninstall script has not been created yet."
             ;;
 
         0)
