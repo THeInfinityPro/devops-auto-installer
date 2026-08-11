@@ -18,6 +18,7 @@ PROMETHEUS_USER="prometheus"
 PROMETHEUS_DIR="/etc/prometheus"
 PROMETHEUS_DATA_DIR="/var/lib/prometheus"
 PROMETHEUS_INSTALL_DIR="/opt/prometheus"
+PROMETHEUS_TEMP_DIR="/opt/prometheus-installer"
 
 # ==========================================
 # Check OS
@@ -140,58 +141,92 @@ download_prometheus() {
 
     info "Downloading Prometheus $PROM_VERSION..."
 
-    mkdir -p "$PROMETHEUS_INSTALL_DIR"
+    # Create dedicated temporary directory
+    rm -rf "$PROMETHEUS_TEMP_DIR"
 
-    cd /tmp
+    mkdir -p "$PROMETHEUS_TEMP_DIR"
+
+    ARCHIVE="$PROMETHEUS_TEMP_DIR/prometheus.tar.gz"
+    EXTRACT_DIR="$PROMETHEUS_TEMP_DIR/extracted"
+
+    mkdir -p "$EXTRACT_DIR"
+    mkdir -p "$PROMETHEUS_INSTALL_DIR"
 
     DOWNLOAD_URL="https://github.com/prometheus/prometheus/releases/download/${PROM_VERSION}/prometheus-${PROM_VERSION#v}.linux-${PROM_ARCH}.tar.gz"
 
-    ARCHIVE="/tmp/prometheus.tar.gz"
-
-    # Remove previous archive
-    rm -f "$ARCHIVE"
-
+    # ==========================================
     # Download
+    # ==========================================
+
     curl -fL "$DOWNLOAD_URL" -o "$ARCHIVE"
 
     success "Prometheus archive downloaded."
 
+    # ==========================================
     # Extract
+    # ==========================================
+
     info "Extracting Prometheus archive..."
 
-    rm -rf /tmp/prometheus-extracted
+    tar -xzf "$ARCHIVE" -C "$EXTRACT_DIR"
 
-    mkdir -p /tmp/prometheus-extracted
+    # ==========================================
+    # Find Actual Prometheus Directory
+    # ==========================================
 
-    tar -xzf "$ARCHIVE" -C /tmp/prometheus-extracted
-
-    # Find extracted directory
-    EXTRACTED_DIR="$(find /tmp/prometheus-extracted \
+    EXTRACTED_DIR="$(find "$EXTRACT_DIR" \
+        -mindepth 1 \
         -maxdepth 1 \
         -type d \
         -name 'prometheus-*' \
         | head -n 1)"
 
     if [[ -z "$EXTRACTED_DIR" ]]; then
-        error "Unable to locate extracted Prometheus directory."
+
+        error "Unable to locate Prometheus extracted directory."
+
+        echo
+        info "Extracted files:"
+        find "$EXTRACT_DIR" -maxdepth 2 -type f
+
         exit 1
     fi
 
-    info "Extracted directory: $EXTRACTED_DIR"
+    info "Prometheus directory found:"
+    info "$EXTRACTED_DIR"
 
-    # Check Prometheus binary
+    # ==========================================
+    # Validate Prometheus Binary
+    # ==========================================
+
     if [[ ! -f "$EXTRACTED_DIR/prometheus" ]]; then
+
         error "Prometheus binary was not found."
+
+        echo
+        info "Available files:"
+        find "$EXTRACTED_DIR" -maxdepth 2 -type f
+
         exit 1
     fi
 
-    # Check Promtool binary
+    # ==========================================
+    # Validate Promtool
+    # ==========================================
+
     if [[ ! -f "$EXTRACTED_DIR/promtool" ]]; then
+
         error "Promtool binary was not found."
+
         exit 1
     fi
 
-    # Install binaries
+    success "Prometheus binaries found."
+
+    # ==========================================
+    # Install Binaries
+    # ==========================================
+
     info "Installing Prometheus binaries..."
 
     install -m 0755 \
@@ -202,11 +237,17 @@ download_prometheus() {
         "$EXTRACTED_DIR/promtool" \
         "$PROMETHEUS_INSTALL_DIR/promtool"
 
-    # Create directories
+    # ==========================================
+    # Create Directories
+    # ==========================================
+
     mkdir -p "$PROMETHEUS_DIR"
     mkdir -p "$PROMETHEUS_DATA_DIR"
 
-    # Copy configuration
+    # ==========================================
+    # Install Configuration
+    # ==========================================
+
     if [[ -f "$EXTRACTED_DIR/prometheus.yml" ]]; then
 
         cp "$EXTRACTED_DIR/prometheus.yml" \
@@ -215,19 +256,28 @@ download_prometheus() {
     else
 
         error "prometheus.yml was not found."
+
         exit 1
 
     fi
 
-    # Set ownership
+    # ==========================================
+    # Ownership
+    # ==========================================
+
     chown -R "$PROMETHEUS_USER:$PROMETHEUS_USER" \
         "$PROMETHEUS_DIR" \
         "$PROMETHEUS_DATA_DIR" \
         "$PROMETHEUS_INSTALL_DIR"
 
+    # ==========================================
+    # Cleanup
+    # ==========================================
+
+    rm -rf "$PROMETHEUS_TEMP_DIR"
+
     success "Prometheus files installed successfully."
 }
-
 # ==========================================
 # Main
 # ==========================================
