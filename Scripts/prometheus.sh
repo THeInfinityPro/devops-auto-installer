@@ -6,6 +6,10 @@
 
 set -e
 
+# ==========================================
+# Script Directory
+# ==========================================
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "$SCRIPT_DIR/common.sh"
@@ -141,7 +145,6 @@ download_prometheus() {
 
     info "Downloading Prometheus $PROM_VERSION..."
 
-    # Create dedicated temporary directory
     rm -rf "$PROMETHEUS_TEMP_DIR"
 
     mkdir -p "$PROMETHEUS_TEMP_DIR"
@@ -171,7 +174,7 @@ download_prometheus() {
     tar -xzf "$ARCHIVE" -C "$EXTRACT_DIR"
 
     # ==========================================
-    # Find Actual Prometheus Directory
+    # Find Extracted Directory
     # ==========================================
 
     EXTRACTED_DIR="$(find "$EXTRACT_DIR" \
@@ -278,6 +281,138 @@ download_prometheus() {
 
     success "Prometheus files installed successfully."
 }
+
+# ==========================================
+# Create Systemd Service
+# ==========================================
+
+create_prometheus_service() {
+
+    info "Creating Prometheus systemd service..."
+
+    cat > /etc/systemd/system/prometheus.service <<EOF
+[Unit]
+Description=Prometheus Monitoring System
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=$PROMETHEUS_USER
+Group=$PROMETHEUS_USER
+Type=simple
+
+ExecStart=$PROMETHEUS_INSTALL_DIR/prometheus \
+    --config.file=$PROMETHEUS_DIR/prometheus.yml \
+    --storage.tsdb.path=$PROMETHEUS_DATA_DIR
+
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+
+    systemctl enable prometheus
+
+    systemctl start prometheus
+
+    if systemctl is-active --quiet prometheus; then
+
+        success "Prometheus service created and started."
+
+    else
+
+        error "Prometheus service failed to start."
+
+        systemctl status prometheus --no-pager
+
+        exit 1
+
+    fi
+}
+
+# ==========================================
+# Verify Prometheus
+# ==========================================
+
+verify_prometheus() {
+
+    info "Verifying Prometheus..."
+
+    # ==========================================
+    # Check Binary
+    # ==========================================
+
+    if [[ ! -x "$PROMETHEUS_INSTALL_DIR/prometheus" ]]; then
+
+        error "Prometheus binary is not available."
+
+        exit 1
+
+    fi
+
+    # ==========================================
+    # Check Promtool
+    # ==========================================
+
+    if [[ ! -x "$PROMETHEUS_INSTALL_DIR/promtool" ]]; then
+
+        error "Promtool binary is not available."
+
+        exit 1
+
+    fi
+
+    # ==========================================
+    # Display Version
+    # ==========================================
+
+    "$PROMETHEUS_INSTALL_DIR/prometheus" --version
+
+    echo
+
+    # ==========================================
+    # Check Service
+    # ==========================================
+
+    if systemctl is-active --quiet prometheus; then
+
+        success "Prometheus service is running."
+
+    else
+
+        error "Prometheus service is not running."
+
+        systemctl status prometheus --no-pager
+
+        exit 1
+
+    fi
+
+    # ==========================================
+    # Check HTTP Endpoint
+    # ==========================================
+
+    info "Checking Prometheus HTTP endpoint..."
+
+    if curl -fsS \
+        http://127.0.0.1:9090/-/ready \
+        >/dev/null 2>&1; then
+
+        success "Prometheus web service is responding on port 9090."
+
+    else
+
+        error "Prometheus HTTP endpoint is not responding."
+
+        exit 1
+
+    fi
+
+    success "Prometheus verification completed."
+}
+
 # ==========================================
 # Main
 # ==========================================
@@ -311,5 +446,9 @@ main() {
     success "Prometheus installation completed."
     success "=========================================="
 }
+
+# ==========================================
+# Start
+# ==========================================
 
 main
