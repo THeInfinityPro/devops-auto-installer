@@ -99,7 +99,7 @@ handle_choice() {
             ;;
 
         7)
-            warning "Verification script has not been created yet."
+            bash "$SCRIPT_DIR/Scripts/verify.sh"
             ;;
 
         8)
