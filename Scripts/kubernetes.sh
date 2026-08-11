@@ -28,7 +28,7 @@ check_supported_os() {
     fi
 
     case "$OS_VERSION" in
-        22.04|24.04)
+        22.04|24.04|26.04)
             success "Supported Ubuntu version: $OS_VERSION"
             ;;
         *)
