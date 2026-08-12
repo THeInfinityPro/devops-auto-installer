@@ -65,6 +65,101 @@ show_menu() {
 }
 
 # ==========================================
+# Install Everything
+# ==========================================
+
+install_everything() {
+
+    echo
+    echo "=========================================="
+    echo "       COMPLETE DEVOPS INSTALLATION"
+    echo "=========================================="
+    echo
+
+    info "Starting complete DevOps installation..."
+
+    # ------------------------------------------
+    # Docker
+    # ------------------------------------------
+
+    info "Step 1/7: Installing Docker..."
+
+    bash "$SCRIPT_DIR/Scripts/docker.sh"
+
+    success "Docker installation completed."
+
+    # ------------------------------------------
+    # Kubernetes Components
+    # ------------------------------------------
+
+    info "Step 2/7: Installing Kubernetes components..."
+
+    bash "$SCRIPT_DIR/Scripts/kubernetes.sh"
+
+    success "Kubernetes component installation completed."
+
+    # ------------------------------------------
+    # Kubernetes Cluster
+    # ------------------------------------------
+
+    info "Step 3/7: Setting up Kubernetes cluster..."
+
+    bash "$SCRIPT_DIR/Scripts/kubernetes-cluster.sh"
+
+    success "Kubernetes cluster setup completed."
+
+    # ------------------------------------------
+    # Jenkins
+    # ------------------------------------------
+
+    info "Step 4/7: Installing Jenkins..."
+
+    bash "$SCRIPT_DIR/Scripts/jenkins.sh"
+
+    success "Jenkins installation completed."
+
+    # ------------------------------------------
+    # Prometheus
+    # ------------------------------------------
+
+    info "Step 5/7: Installing Prometheus..."
+
+    bash "$SCRIPT_DIR/Scripts/prometheus.sh"
+
+    success "Prometheus installation completed."
+
+    # ------------------------------------------
+    # Grafana
+    # ------------------------------------------
+
+    info "Step 6/7: Installing Grafana..."
+
+    bash "$SCRIPT_DIR/Scripts/grafana.sh"
+
+    success "Grafana installation completed."
+
+    # ------------------------------------------
+    # Verification
+    # ------------------------------------------
+
+    info "Step 7/7: Verifying complete installation..."
+
+    bash "$SCRIPT_DIR/Scripts/verify.sh"
+
+    # ------------------------------------------
+    # Complete
+    # ------------------------------------------
+
+    echo
+    success "=========================================="
+    success "COMPLETE DEVOPS INSTALLATION FINISHED"
+    success "=========================================="
+    echo
+
+    log "Complete DevOps installation completed."
+}
+
+# ==========================================
 # Handle User Selection
 # ==========================================
 
