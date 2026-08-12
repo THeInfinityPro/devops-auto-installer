@@ -20,16 +20,20 @@ confirm_action() {
 
     echo
     warning "$message"
+
     read -rp "Continue? [y/N]: " confirmation
 
     case "$confirmation" in
+
         y|Y)
             return 0
             ;;
+
         *)
             warning "Operation cancelled."
             return 1
             ;;
+
     esac
 }
 
@@ -81,7 +85,7 @@ remove_kubernetes() {
     info "Removing Kubernetes..."
 
     # ------------------------------------------
-    # Reset Kubernetes cluster
+    # Reset Kubernetes Cluster
     # ------------------------------------------
 
     if command_exists kubeadm; then
@@ -97,11 +101,15 @@ remove_kubernetes() {
     fi
 
     # ------------------------------------------
-    # Stop Services
+    # Stop Kubernetes Services
     # ------------------------------------------
 
     systemctl stop kubelet 2>/dev/null || true
     systemctl disable kubelet 2>/dev/null || true
+
+    # ------------------------------------------
+    # Stop Containerd
+    # ------------------------------------------
 
     systemctl stop containerd 2>/dev/null || true
 
@@ -129,6 +137,7 @@ remove_kubernetes() {
     rm -rf /var/lib/kubelet
     rm -rf /etc/cni
     rm -rf /opt/cni
+
     rm -rf "$HOME/.kube"
 
     # ------------------------------------------
@@ -180,6 +189,7 @@ remove_jenkins() {
 
     rm -rf /var/lib/jenkins
     rm -rf /etc/default/jenkins
+
     rm -f /etc/apt/sources.list.d/jenkins.list
     rm -f /etc/apt/keyrings/jenkins-keyring.asc
 
@@ -256,14 +266,16 @@ remove_everything() {
     echo "=========================================="
     echo
 
-    if ! confirm_action "WARNING: This will remove Docker, Kubernetes, Jenkins, Prometheus and Grafana."; then
+    if ! confirm_action \
+        "WARNING: This will remove Docker, Kubernetes, Jenkins, Prometheus and Grafana."; then
         return
     fi
 
     info "Starting complete DevOps software removal..."
 
-    # Individual functions have their own confirmation.
-    # Remove everything needs only one confirmation.
+    # ==========================================
+    # Remove Grafana
+    # ==========================================
 
     info "Removing Grafana..."
 
@@ -271,13 +283,19 @@ remove_everything() {
     systemctl disable grafana-server 2>/dev/null || true
 
     apt-get purge -y grafana 2>/dev/null || true
+
     apt-get autoremove -y
 
     rm -rf /etc/grafana
     rm -rf /var/lib/grafana
     rm -rf /var/log/grafana
+
     rm -f /etc/apt/sources.list.d/grafana.list
     rm -f /etc/apt/keyrings/grafana.gpg
+
+    # ==========================================
+    # Remove Prometheus
+    # ==========================================
 
     info "Removing Prometheus..."
 
@@ -295,23 +313,37 @@ remove_everything() {
     rm -rf /var/lib/prometheus
     rm -rf /opt/prometheus-installer
 
+    # ==========================================
+    # Remove Jenkins
+    # ==========================================
+
     info "Removing Jenkins..."
 
     systemctl stop jenkins 2>/dev/null || true
     systemctl disable jenkins 2>/dev/null || true
 
     apt-get purge -y jenkins 2>/dev/null || true
+
     apt-get autoremove -y
 
     rm -rf /var/lib/jenkins
     rm -rf /etc/default/jenkins
+
     rm -f /etc/apt/sources.list.d/jenkins.list
     rm -f /etc/apt/keyrings/jenkins-keyring.asc
+
+    # ==========================================
+    # Remove Kubernetes
+    # ==========================================
 
     info "Removing Kubernetes..."
 
     if command_exists kubeadm; then
+
+        info "Resetting Kubernetes cluster..."
+
         kubeadm reset -f || true
+
     fi
 
     systemctl stop kubelet 2>/dev/null || true
@@ -331,6 +363,7 @@ remove_everything() {
     rm -rf /var/lib/kubelet
     rm -rf /etc/cni
     rm -rf /opt/cni
+
     rm -rf "$HOME/.kube"
 
     rm -f /etc/apt/sources.list.d/kubernetes.list
@@ -338,6 +371,10 @@ remove_everything() {
 
     rm -f /etc/modules-load.d/k8s.conf
     rm -f /etc/sysctl.d/k8s.conf
+
+    # ==========================================
+    # Remove Docker
+    # ==========================================
 
     info "Removing Docker..."
 
@@ -371,59 +408,136 @@ remove_everything() {
 }
 
 # ==========================================
-# Verification
+# Verify Uninstall
 # ==========================================
 
 verify_uninstall() {
 
     echo
+
     info "Verifying software removal..."
 
     local failures=0
 
+    # ==========================================
+    # Verify Docker
+    # ==========================================
+
     if command_exists docker; then
+
         warning "Docker is still installed."
         ((failures+=1))
+
     else
+
         success "Docker removed."
+
     fi
 
+    # ==========================================
+    # Verify Kubernetes
+    # ==========================================
+
+    KUBERNETES_FOUND=false
+
     if command_exists kubeadm; then
-        warning "Kubernetes is still installed."
-        ((failures+=1))
-    else
-        success "Kubernetes removed."
+        KUBERNETES_FOUND=true
     fi
+
+    if command_exists kubelet; then
+        KUBERNETES_FOUND=true
+    fi
+
+    if command_exists kubectl; then
+        KUBERNETES_FOUND=true
+    fi
+
+    if dpkg -l 2>/dev/null |
+        grep -qE '^(ii|rc)[[:space:]]+(kubeadm|kubelet|kubectl)[[:space:]]'; then
+
+        KUBERNETES_FOUND=true
+
+    fi
+
+    if [[ -d "/etc/kubernetes" ]]; then
+        KUBERNETES_FOUND=true
+    fi
+
+    if [[ -d "/var/lib/kubelet" ]]; then
+        KUBERNETES_FOUND=true
+    fi
+
+    if [[ "$KUBERNETES_FOUND" == true ]]; then
+
+        warning "Kubernetes components or configuration still exist."
+        ((failures+=1))
+
+    else
+
+        success "Kubernetes completely removed."
+
+    fi
+
+    # ==========================================
+    # Verify Jenkins
+    # ==========================================
 
     if systemctl list-unit-files 2>/dev/null |
         grep -q "^jenkins.service"; then
 
         warning "Jenkins service still exists."
         ((failures+=1))
+
     else
+
         success "Jenkins removed."
+
     fi
+
+    # ==========================================
+    # Verify Prometheus
+    # ==========================================
 
     if [[ -x "/opt/prometheus/prometheus" ]]; then
+
         warning "Prometheus is still installed."
         ((failures+=1))
+
     else
+
         success "Prometheus removed."
+
     fi
 
+    # ==========================================
+    # Verify Grafana
+    # ==========================================
+
     if command_exists grafana-server; then
+
         warning "Grafana is still installed."
         ((failures+=1))
+
     else
+
         success "Grafana removed."
+
     fi
+
+    # ==========================================
+    # Summary
+    # ==========================================
 
     echo
 
     if [[ "$failures" -eq 0 ]]; then
+
         success "Uninstall verification completed successfully."
+
     else
+
         warning "Some components were not completely removed."
+
     fi
 }
 
@@ -449,6 +563,7 @@ show_uninstall_menu() {
     echo "6. Remove Everything"
     echo "7. Verify Removal"
     echo "0. Back"
+
     echo
 }
 
@@ -525,6 +640,7 @@ main() {
         fi
 
         echo
+
         read -rp "Press Enter to continue..."
 
     done
