@@ -51,18 +51,18 @@ show_menu() {
 
     echo "1. Install Docker"
     echo "2. Install Kubernetes"
-    echo "3. Install Jenkins"
-    echo "4. Install Prometheus"
-    echo "5. Install Grafana"
+    echo "3. Setup Kubernetes Cluster"
+    echo "4. Install Jenkins"
+    echo "5. Install Prometheus"
+    echo "6. Install Grafana"
     echo
-    echo "6. Install Everything"
-    echo "7. Verify Installation"
-    echo "8. Uninstall"
+    echo "7. Install Everything"
+    echo "8. Verify Installation"
+    echo "9. Uninstall"
     echo
-    echo "0. Exit"
+    echo "10. Exit"
     echo
 }
-
 
 # ==========================================
 # Handle User Selection
@@ -83,30 +83,34 @@ handle_choice() {
             ;;
 
         3)
-            bash "$SCRIPT_DIR/Scripts/jenkins.sh"
+            bash "$SCRIPT_DIR/Scripts/kubernetes-cluster.sh"
             ;;
 
         4)
-            bash "$SCRIPT_DIR/Scripts/prometheus.sh"
+            bash "$SCRIPT_DIR/Scripts/jenkins.sh"
             ;;
 
         5)
-            bash "$SCRIPT_DIR/Scripts/grafana.sh"
+            bash "$SCRIPT_DIR/Scripts/prometheus.sh"
             ;;
 
         6)
-            install_everything
+            bash "$SCRIPT_DIR/Scripts/grafana.sh"
             ;;
 
         7)
-            bash "$SCRIPT_DIR/Scripts/verify.sh"
+            install_everything
             ;;
 
         8)
+            bash "$SCRIPT_DIR/Scripts/verify.sh"
+            ;;
+
+        9)
             warning "Uninstall script has not been created yet."
             ;;
 
-        0)
+        10)
             echo
             success "Exiting DevOps Auto Installer."
             exit 0
