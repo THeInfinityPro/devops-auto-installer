@@ -202,10 +202,10 @@ handle_choice() {
             ;;
 
         9)
-            warning "Uninstall script has not been created yet."
+            bash "$SCRIPT_DIR/Scripts/uninstall.sh"
             ;;
 
-        10)
+        10)-
             echo
             success "Exiting DevOps Auto Installer."
             exit 0
