@@ -346,15 +346,34 @@ verify_grafana() {
 
     fi
 
-    if curl -fsS http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
+info "Checking Grafana HTTP endpoint..."
 
-        check_pass "Grafana HTTP endpoint is responding."
+GRAFANA_READY=false
 
-    else
+for i in {1..12}; do
 
-        check_warning "Grafana HTTP endpoint is not responding."
+    if curl -fsS \
+        http://127.0.0.1:3000/api/health \
+        >/dev/null 2>&1; then
+
+        GRAFANA_READY=true
+        break
 
     fi
+
+    sleep 5
+
+done
+
+if [[ "$GRAFANA_READY" == true ]]; then
+
+    check_pass "Grafana HTTP endpoint is responding."
+
+else
+
+    check_warning "Grafana service is running but HTTP endpoint is not responding."
+
+fi
 }
 
 # ==========================================
