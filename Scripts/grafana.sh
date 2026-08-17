@@ -133,7 +133,7 @@ verify_grafana() {
         exit 1
     fi
 
-    if curl -fsS http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
+    if curl -fsS http://127.0.0.1:${GRAFANA_PORT}/api/health >/dev/null 2>&1; then
         success "Grafana HTTP API is responding on port 3000."
     else
         warning "Grafana is running but the HTTP endpoint is not ready yet."

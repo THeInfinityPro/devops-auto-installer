@@ -14,6 +14,23 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$PROJECT_ROOT/logs"
 LOG_FILE="$LOG_DIR/installer.log"
 
+# ==========================================
+# Configuration
+# ==========================================
+
+CONFIG_FILE="$PROJECT_ROOT/config/installer.conf"
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "[ERROR] Configuration file not found: $CONFIG_FILE"
+    exit 1
+fi
+
+source "$CONFIG_FILE"
+
+# ==========================================
+# Create Log Directory
+# ==========================================
+
 mkdir -p "$LOG_DIR"
 
 # ==========================================

@@ -484,7 +484,7 @@ verify_jenkins() {
 
     if curl -fsS \
         --max-time 5 \
-        http://127.0.0.1:8080/login \
+        http://127.0.0.1:${JENKINS_PORT}/login \
         >/dev/null 2>&1; then
 
         check_pass "Jenkins HTTP endpoint is responding."
@@ -549,7 +549,7 @@ verify_prometheus() {
 
     if curl -fsS \
         --max-time 5 \
-        http://127.0.0.1:9090/-/ready \
+        http://127.0.0.1:${PROMETHEUS_PORT}/-/ready \
         >/dev/null 2>&1; then
 
         check_pass "Prometheus HTTP endpoint is responding."
@@ -566,7 +566,7 @@ verify_prometheus() {
 
     if curl -fsS \
         --max-time 5 \
-        http://127.0.0.1:9090/api/v1/status/buildinfo \
+        http://127.0.0.1:${PROMETHEUS_PORT}/api/v1/status/buildinfo \
         >/dev/null 2>&1; then
 
         check_pass "Prometheus API is healthy."
@@ -629,7 +629,7 @@ verify_grafana() {
 
     if curl -fsS \
         --max-time 5 \
-        http://127.0.0.1:3000/api/health \
+        http://127.0.0.1:${GRAFANA_PORT}/api/health \
         >/dev/null 2>&1; then
 
         check_pass "Grafana HTTP endpoint is responding."
@@ -649,7 +649,7 @@ verify_grafana() {
     GRAFANA_HEALTH="$(
         curl -fsS \
             --max-time 5 \
-            http://127.0.0.1:3000/api/health \
+            http://127.0.0.1:${GRAFANA_PORT}/api/health \
             2>/dev/null ||
             true
     )"

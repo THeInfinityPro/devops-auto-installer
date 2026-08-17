@@ -11,12 +11,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
 # ==========================================
-# Kubernetes Version
-# ==========================================
-
-KUBERNETES_MINOR_VERSION="1.36"
-
-# ==========================================
 # Check Supported OS
 # ==========================================
 
