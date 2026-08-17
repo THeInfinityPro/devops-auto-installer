@@ -391,6 +391,49 @@ verify_prometheus() {
     fi
 
     # ==========================================
+# Wait for Prometheus HTTP Endpoint
+# ==========================================
+
+info "Waiting for Prometheus HTTP endpoint..."
+
+PROMETHEUS_READY=false
+
+for i in {1..60}; do
+
+    if curl -fsS \
+        --max-time 2 \
+        "http://127.0.0.1:${PROMETHEUS_PORT}/-/ready" \
+        >/dev/null 2>&1; then
+
+        PROMETHEUS_READY=true
+        break
+
+    fi
+
+    echo -ne "\r[INFO] Waiting for Prometheus... ${i}/60 seconds"
+
+    sleep 1
+
+done
+
+echo
+
+if [[ "$PROMETHEUS_READY" == true ]]; then
+
+    success "Prometheus HTTP endpoint is responding."
+
+else
+
+    error "Prometheus HTTP endpoint did not become ready within 60 seconds."
+
+    info "Recent Prometheus logs:"
+    journalctl -u prometheus -n 20 --no-pager
+
+    exit 1
+
+fi
+
+    # ==========================================
     # Check HTTP Endpoint
     # ==========================================
 
