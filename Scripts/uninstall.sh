@@ -266,15 +266,34 @@ remove_everything() {
     echo "=========================================="
     echo
 
-    if ! confirm_action \
-        "WARNING: This will remove Docker, Kubernetes, Jenkins, Prometheus and Grafana."; then
-        return
-    fi
+    warning "This will remove:"
+    echo "  - Docker"
+    echo "  - Kubernetes"
+    echo "  - Jenkins"
+    echo "  - Prometheus"
+    echo "  - Grafana"
+    echo
+
+    read -rp "Are you sure you want to continue? [y/N]: " confirmation
+
+    case "$confirmation" in
+
+        y|Y)
+            ;;
+        
+        *)
+            warning "Complete removal cancelled."
+            return
+            ;;
+
+    esac
+
+    echo
 
     info "Starting complete DevOps software removal..."
 
     # ==========================================
-    # Remove Grafana
+    # Grafana
     # ==========================================
 
     info "Removing Grafana..."
@@ -284,8 +303,6 @@ remove_everything() {
 
     apt-get purge -y grafana 2>/dev/null || true
 
-    apt-get autoremove -y
-
     rm -rf /etc/grafana
     rm -rf /var/lib/grafana
     rm -rf /var/log/grafana
@@ -293,8 +310,10 @@ remove_everything() {
     rm -f /etc/apt/sources.list.d/grafana.list
     rm -f /etc/apt/keyrings/grafana.gpg
 
+    success "Grafana removed."
+
     # ==========================================
-    # Remove Prometheus
+    # Prometheus
     # ==========================================
 
     info "Removing Prometheus..."
@@ -313,8 +332,10 @@ remove_everything() {
     rm -rf /var/lib/prometheus
     rm -rf /opt/prometheus-installer
 
+    success "Prometheus removed."
+
     # ==========================================
-    # Remove Jenkins
+    # Jenkins
     # ==========================================
 
     info "Removing Jenkins..."
@@ -324,19 +345,23 @@ remove_everything() {
 
     apt-get purge -y jenkins 2>/dev/null || true
 
-    apt-get autoremove -y
-
     rm -rf /var/lib/jenkins
     rm -rf /etc/default/jenkins
 
     rm -f /etc/apt/sources.list.d/jenkins.list
     rm -f /etc/apt/keyrings/jenkins-keyring.asc
 
+    success "Jenkins removed."
+
     # ==========================================
-    # Remove Kubernetes
+    # Kubernetes
     # ==========================================
 
     info "Removing Kubernetes..."
+
+    # ------------------------------------------
+    # Reset Cluster
+    # ------------------------------------------
 
     if command_exists kubeadm; then
 
@@ -344,10 +369,22 @@ remove_everything() {
 
         kubeadm reset -f || true
 
+    else
+
+        info "kubeadm not found. Skipping cluster reset."
+
     fi
+
+    # ------------------------------------------
+    # Stop Kubelet
+    # ------------------------------------------
 
     systemctl stop kubelet 2>/dev/null || true
     systemctl disable kubelet 2>/dev/null || true
+
+    # ------------------------------------------
+    # Remove Kubernetes Packages
+    # ------------------------------------------
 
     apt-mark unhold kubelet kubeadm kubectl 2>/dev/null || true
 
@@ -357,23 +394,50 @@ remove_everything() {
         kubectl \
         2>/dev/null || true
 
-    apt-get autoremove -y
+    # ------------------------------------------
+    # Remove Kubernetes Data
+    # ------------------------------------------
 
     rm -rf /etc/kubernetes
     rm -rf /var/lib/kubelet
     rm -rf /etc/cni
     rm -rf /opt/cni
+    rm -rf /var/lib/cni
 
-    rm -rf "$HOME/.kube"
+    # ------------------------------------------
+    # Remove kubeconfig
+    # ------------------------------------------
+
+    rm -rf /root/.kube
+    rm -rf /home/*/.kube
+
+    # ------------------------------------------
+    # Remove Kubernetes Repository
+    # ------------------------------------------
 
     rm -f /etc/apt/sources.list.d/kubernetes.list
     rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
+    # ------------------------------------------
+    # Remove Kubernetes Kernel Configuration
+    # ------------------------------------------
+
     rm -f /etc/modules-load.d/k8s.conf
     rm -f /etc/sysctl.d/k8s.conf
 
+    # ------------------------------------------
+    # Remove Kubernetes systemd leftovers
+    # ------------------------------------------
+
+    rm -f /etc/systemd/system/kubelet.service
+    rm -rf /etc/systemd/system/kubelet.service.d
+
+    systemctl daemon-reload
+
+    success "Kubernetes removed."
+
     # ==========================================
-    # Remove Docker
+    # Docker
     # ==========================================
 
     info "Removing Docker..."
@@ -390,20 +454,80 @@ remove_everything() {
         docker-ce-rootless-extras \
         2>/dev/null || true
 
-    apt-get autoremove -y
-
     rm -rf /var/lib/docker
     rm -rf /var/lib/containerd
 
     rm -f /etc/apt/sources.list.d/docker.list
     rm -f /etc/apt/keyrings/docker.asc
 
-    sysctl --system >/dev/null 2>&1 || true
+    systemctl daemon-reload
 
+    # ==========================================
+    # Final Cleanup
+    # ==========================================
+
+    info "Running final package cleanup..."
+
+    apt-get autoremove -y
+    apt-get autoclean -y
     apt-get update
 
+    # ------------------------------------------
+    # Reload system configuration
+    # ------------------------------------------
+
+    sysctl --system >/dev/null 2>&1 || true
+
+    # ------------------------------------------
+    # Final Kubernetes verification
+    # ------------------------------------------
+
+    echo
+    info "Performing final Kubernetes cleanup verification..."
+
+    K8S_REMAINING=false
+
+    if command -v kubeadm >/dev/null 2>&1; then
+        K8S_REMAINING=true
+    fi
+
+    if command -v kubelet >/dev/null 2>&1; then
+        K8S_REMAINING=true
+    fi
+
+    if command -v kubectl >/dev/null 2>&1; then
+        K8S_REMAINING=true
+    fi
+
+    if [[ -d "/etc/kubernetes" ]]; then
+        K8S_REMAINING=true
+    fi
+
+    if [[ -d "/var/lib/kubelet" ]]; then
+        K8S_REMAINING=true
+    fi
+
+    if [[ -d "/etc/cni" ]]; then
+        K8S_REMAINING=true
+    fi
+
+    if [[ -d "/var/lib/cni" ]]; then
+        K8S_REMAINING=true
+    fi
+
+    if [[ "$K8S_REMAINING" == true ]]; then
+
+        warning "Kubernetes leftovers detected."
+
+    else
+
+        success "Kubernetes completely removed."
+
+    fi
+
+    echo
     success "=========================================="
-    success "Complete DevOps software removal finished."
+    success "COMPLETE DEVOPS REMOVAL FINISHED"
     success "=========================================="
 }
 
