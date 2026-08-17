@@ -434,49 +434,52 @@ verify_uninstall() {
 
     fi
 
-    # ==========================================
-    # Verify Kubernetes
-    # ==========================================
+# ==========================================
+# Verify Kubernetes
+# ==========================================
 
-    KUBERNETES_FOUND=false
+KUBERNETES_FOUND=false
 
-    if command_exists kubeadm; then
-        KUBERNETES_FOUND=true
-    fi
+# Check binaries
+if command_exists kubeadm; then
+    KUBERNETES_FOUND=true
+fi
 
-    if command_exists kubelet; then
-        KUBERNETES_FOUND=true
-    fi
+if command_exists kubelet; then
+    KUBERNETES_FOUND=true
+fi
 
-    if command_exists kubectl; then
-        KUBERNETES_FOUND=true
-    fi
+if command_exists kubectl; then
+    KUBERNETES_FOUND=true
+fi
 
-    if dpkg -l 2>/dev/null |
-        grep -qE '^(ii|rc)[[:space:]]+(kubeadm|kubelet|kubectl)[[:space:]]'; then
+# Check installed packages only
+if dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package}\n' 2>/dev/null |
+    grep -qE '^ii[[:space:]]+(kubeadm|kubelet|kubectl)(:|[[:space:]])'; then
 
-        KUBERNETES_FOUND=true
+    KUBERNETES_FOUND=true
+fi
 
-    fi
+# Check important Kubernetes directories
+if [[ -d "/etc/kubernetes" ]]; then
+    KUBERNETES_FOUND=true
+fi
 
-    if [[ -d "/etc/kubernetes" ]]; then
-        KUBERNETES_FOUND=true
-    fi
+if [[ -d "/var/lib/kubelet" ]]; then
+    KUBERNETES_FOUND=true
+fi
 
-    if [[ -d "/var/lib/kubelet" ]]; then
-        KUBERNETES_FOUND=true
-    fi
+# Final result
+if [[ "$KUBERNETES_FOUND" == true ]]; then
 
-    if [[ "$KUBERNETES_FOUND" == true ]]; then
+    warning "Kubernetes components or configuration still exist."
+    ((failures+=1))
 
-        warning "Kubernetes components or configuration still exist."
-        ((failures+=1))
+else
 
-    else
+    success "Kubernetes completely removed."
 
-        success "Kubernetes completely removed."
-
-    fi
+fi
 
     # ==========================================
     # Verify Jenkins
