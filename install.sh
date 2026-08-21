@@ -205,7 +205,7 @@ handle_choice() {
             bash "$SCRIPT_DIR/Scripts/uninstall.sh"
             ;;
 
-        10)-
+        10)
             echo
             success "Exiting DevOps Auto Installer."
             exit 0
