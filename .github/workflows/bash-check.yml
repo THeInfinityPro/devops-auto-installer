@@ -1,0 +1,45 @@
+name: Bash Script Validation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  bash-validation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Find Bash Scripts
+        run: |
+          find . -type f -name "*.sh"
+
+      - name: Validate Bash Syntax
+        run: |
+          echo "Checking Bash script syntax..."
+
+          FAILED=0
+
+          while IFS= read -r script; do
+            echo "Checking: $script"
+
+            if bash -n "$script"; then
+              echo "PASS: $script"
+            else
+              echo "FAIL: $script"
+              FAILED=1
+            fi
+          done < <(find . -type f -name "*.sh" -not -path "./.git/*")
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "Bash syntax validation failed."
+            exit 1
+          fi
+
+          echo "All Bash scripts passed syntax validation."
