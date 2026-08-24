@@ -516,6 +516,26 @@ remove_everything() {
     systemctl daemon-reload
 
     # ==========================================
+# Final Kubernetes Leftover Cleanup
+# ==========================================
+
+info "Performing final Kubernetes cleanup..."
+
+systemctl stop kubelet 2>/dev/null || true
+
+rm -rf /etc/kubernetes
+rm -rf /var/lib/kubelet
+rm -rf /var/lib/etcd
+rm -rf /etc/cni
+rm -rf /opt/cni
+rm -rf /var/lib/cni
+
+rm -rf /root/.kube
+rm -rf /home/*/.kube
+
+success "Final Kubernetes cleanup completed."
+
+    # ==========================================
     # Final Cleanup
     # ==========================================
 
