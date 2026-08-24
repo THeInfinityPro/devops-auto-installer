@@ -101,16 +101,35 @@
 
     configure_kubectl() {
 
-        info "Configuring kubectl..."
+    info "Configuring kubectl..."
 
-        mkdir -p "$HOME/.kube"
+    if [[ ! -f "$KUBECONFIG_FILE" ]]; then
+        error "Kubernetes admin configuration not found: $KUBECONFIG_FILE"
+        exit 1
+    fi
 
-        cp "$KUBECONFIG_FILE" "$HOME/.kube/config"
+    # Configure root
+    mkdir -p /root/.kube
+    cp "$KUBECONFIG_FILE" /root/.kube/config
+    chown root:root /root/.kube/config
 
-        chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+    # Configure the original sudo user
+    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
 
-        success "kubectl configuration completed."
-    }
+        USER_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+
+        mkdir -p "$USER_HOME/.kube"
+
+        cp "$KUBECONFIG_FILE" "$USER_HOME/.kube/config"
+
+        chown -R "$SUDO_USER:$SUDO_USER" "$USER_HOME/.kube"
+
+        success "kubectl configured for user: $SUDO_USER"
+
+    fi
+
+    success "kubectl configuration completed."
+}
 
     # ==========================================
     # Install Calico CNI
@@ -141,26 +160,27 @@
 
     wait_for_node() {
 
-        info "Waiting for Kubernetes node to become Ready..."
+    info "Waiting for Kubernetes node to become Ready..."
 
-        for i in {1..30}; do
+    for i in {1..30}; do
 
-            if kubectl get nodes 2>/dev/null | grep -q " Ready "; then
+        if kubectl get nodes --no-headers 2>/dev/null | \
+            grep -qE '[[:space:]]Ready[[:space:]]'; then
 
-                success "Kubernetes node is Ready."
+            success "Kubernetes node is Ready."
+            return 0
 
-                return 0
+        fi
 
-            fi
+        info "Node is not ready yet. Waiting 10 seconds..."
+        sleep 10
 
-            sleep 10
+    done
 
-        done
+    warning "Node did not become Ready within 300 seconds."
 
-        warning "Node did not become Ready within the expected time."
-
-        kubectl get nodes -o wide || true
-    }
+    kubectl get nodes -o wide || true
+}
 
     # ==========================================
     # Verify Cluster
@@ -199,9 +219,9 @@
 
     main() {
 
-        info "Starting Kubernetes cluster setup..."
-
         initialize
+
+        info "Starting Kubernetes cluster setup..."
 
         check_kubernetes_components
 

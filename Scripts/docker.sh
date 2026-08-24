@@ -278,9 +278,9 @@ verify_docker() {
 
 main() {
 
-    info "Starting Docker installation..."
-
     initialize
+
+    info "Starting Docker installation..."
 
     check_supported_os
 
@@ -313,7 +313,6 @@ main() {
     success "Docker installation completed."
     success "=========================================="
 }
-
 
 # ==========================================
 # Execute

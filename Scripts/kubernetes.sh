@@ -111,22 +111,37 @@ configure_containerd() {
 
         apt-get update
         apt-get install -y containerd
-
     fi
 
     info "Configuring containerd..."
 
     mkdir -p /etc/containerd
 
-    containerd config default > /etc/containerd/config.toml
+    if [[ ! -f /etc/containerd/config.toml ]]; then
+
+        containerd config default > /etc/containerd/config.toml
+
+        info "Default containerd configuration created."
+
+    else
+
+        info "Existing containerd configuration detected."
+
+    fi
 
     sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' \
         /etc/containerd/config.toml
 
-    systemctl restart containerd
     systemctl enable containerd
+    systemctl restart containerd
 
-    success "Containerd configured."
+    if systemctl is-active --quiet containerd; then
+        success "Containerd configured and running."
+    else
+        error "Containerd failed to start."
+        systemctl status containerd --no-pager
+        exit 1
+    fi
 }
 
 # ==========================================
@@ -187,9 +202,10 @@ enable_kubelet() {
     info "Enabling kubelet..."
 
     systemctl enable kubelet
-    systemctl start kubelet
 
-    success "Kubelet enabled."
+    success "Kubelet service enabled."
+
+    info "Note: kubelet may not remain active until the Kubernetes cluster is initialized."
 }
 
 # ==========================================
@@ -236,9 +252,9 @@ verify_kubernetes() {
 
 main() {
 
-    info "Starting Kubernetes installation..."
-
     initialize
+
+    info "Starting Kubernetes installation..."
 
     check_supported_os
 

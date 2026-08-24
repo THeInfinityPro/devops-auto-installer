@@ -108,12 +108,6 @@ remove_kubernetes() {
     systemctl disable kubelet 2>/dev/null || true
 
     # ------------------------------------------
-    # Stop Containerd
-    # ------------------------------------------
-
-    systemctl stop containerd 2>/dev/null || true
-
-    # ------------------------------------------
     # Remove Kubernetes Packages
     # ------------------------------------------
 
@@ -125,24 +119,72 @@ remove_kubernetes() {
         kubelet \
         kubeadm \
         kubectl \
+        kubernetes-cni \
         2>/dev/null || true
 
     apt-get autoremove -y
+    apt-get autoclean -y
 
     # ------------------------------------------
     # Remove Kubernetes Configuration
     # ------------------------------------------
 
+    info "Removing Kubernetes configuration..."
+
     rm -rf /etc/kubernetes
     rm -rf /var/lib/kubelet
+    rm -rf /var/lib/etcd
+
+    # CNI configuration
     rm -rf /etc/cni
     rm -rf /opt/cni
+    rm -rf /var/lib/cni
 
-    rm -rf "$HOME/.kube"
+    # ------------------------------------------
+    # Remove Kubernetes Systemd Files
+    # ------------------------------------------
+
+    rm -f /etc/systemd/system/kubelet.service
+    rm -rf /etc/systemd/system/kubelet.service.d
+
+    systemctl daemon-reload
+
+    # ------------------------------------------
+    # Remove kubectl Configuration
+    # ------------------------------------------
+
+    # Root user
+    rm -rf /root/.kube
+
+    # User who ran sudo
+    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+
+        USER_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+
+        if [[ -n "$USER_HOME" && -d "$USER_HOME" ]]; then
+
+            info "Removing kubectl configuration for user: $SUDO_USER"
+
+            rm -rf "$USER_HOME/.kube"
+
+        fi
+
+    fi
+
+    # Other normal users
+    for USER_HOME in /home/*; do
+
+        if [[ -d "$USER_HOME" ]]; then
+            rm -rf "$USER_HOME/.kube"
+        fi
+
+    done
 
     # ------------------------------------------
     # Remove Kubernetes Repository
     # ------------------------------------------
+
+    info "Removing Kubernetes repository..."
 
     rm -f /etc/apt/sources.list.d/kubernetes.list
     rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
@@ -160,8 +202,19 @@ remove_kubernetes() {
     # Restart Containerd
     # ------------------------------------------
 
-    systemctl start containerd 2>/dev/null || true
-    systemctl enable containerd 2>/dev/null || true
+    # Containerd may be used by Docker, so don't remove it
+    if command_exists containerd; then
+
+        info "Restarting containerd..."
+
+        systemctl restart containerd 2>/dev/null || true
+        systemctl enable containerd 2>/dev/null || true
+
+    fi
+
+    # ------------------------------------------
+    # Update Package Cache
+    # ------------------------------------------
 
     apt-get update
 
@@ -249,7 +302,7 @@ remove_grafana() {
     rm -rf /var/log/grafana
 
     rm -f /etc/apt/sources.list.d/grafana.list
-    rm -f /etc/apt/keyrings/grafana.gpg
+    rm -f /etc/apt/keyrings/grafana.asc
 
     success "Grafana removal completed."
 }

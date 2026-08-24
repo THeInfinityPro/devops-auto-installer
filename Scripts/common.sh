@@ -130,7 +130,7 @@ check_internet() {
 
     info "Checking Internet connectivity..."
 
-    if ping -c 2 -W 3 8.8.8.8 >/dev/null 2>&1; then
+    if curl -fsS --max-time 10 https://github.com >/dev/null 2>&1; then
         success "Internet connection is available."
     else
         error "Internet connection is not available."

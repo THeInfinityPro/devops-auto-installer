@@ -133,11 +133,24 @@ verify_grafana() {
         exit 1
     fi
 
-    if curl -fsS http://127.0.0.1:${GRAFANA_PORT}/api/health >/dev/null 2>&1; then
-        success "Grafana HTTP API is responding on port : "${GRAFANA_PORT}" ."
-    else
-        warning "Grafana is running but the HTTP endpoint is not ready yet."
-    fi
+    info "Checking Grafana HTTP endpoint..."
+
+    for i in {1..60}; do
+
+        if curl -fsS --max-time 10 \
+            "http://127.0.0.1:${GRAFANA_PORT}/api/health" \
+            >/dev/null 2>&1; then
+
+            success "Grafana HTTP API is responding on port: ${GRAFANA_PORT}."
+            return 0
+        fi
+
+        info "Grafana is not ready yet. Waiting 10 seconds..."
+        sleep 10
+
+    done
+
+    warning "Grafana service is running but HTTP endpoint did not respond within 60 seconds."
 }
 
 # ==========================================
@@ -146,9 +159,9 @@ verify_grafana() {
 
 main() {
 
-    info "Starting Grafana installation..."
-
     initialize
+
+    info "Starting Grafana installation..."
 
     check_supported_os
 

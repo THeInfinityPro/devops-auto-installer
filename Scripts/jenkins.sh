@@ -150,21 +150,30 @@ verify_jenkins() {
     fi
 
     if ! systemctl is-active --quiet jenkins; then
-        error "Jenkins is not running."
+        error "Jenkins service is not running."
         exit 1
     fi
 
     success "Jenkins service verification passed."
 
-    if command_exists curl; then
+    info "Checking Jenkins web interface..."
 
-        if curl -fsS http://127.0.0.1:8080/login >/dev/null 2>&1; then
-            success "Jenkins web interface is responding on port 8080."
-        else
-            warning "Jenkins web interface is not responding yet."
+    for i in {1..6}; do
+
+        if curl -fsS --max-time 10 \
+            "http://127.0.0.1:${JENKINS_PORT}/login" \
+            >/dev/null 2>&1; then
+
+            success "Jenkins web interface is responding on port: ${JENKINS_PORT}."
+            return 0
         fi
 
-    fi
+        info "Jenkins is not ready yet. Waiting 10 seconds..."
+        sleep 10
+
+    done
+
+    warning "Jenkins service is running but the web interface did not respond within 60 seconds."
 }
 
 # ==========================================
@@ -173,9 +182,9 @@ verify_jenkins() {
 
 main() {
 
-    info "Starting Jenkins installation..."
-
     initialize
+
+    info "Starting Jenkins installation..."
 
     check_supported_os
 
@@ -187,9 +196,9 @@ main() {
 
     start_jenkins
 
-    show_initial_password
-
     verify_jenkins
+
+    show_initial_password
 
     log "Jenkins installation completed."
 
