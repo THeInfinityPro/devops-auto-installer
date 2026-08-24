@@ -1,0 +1,69 @@
+# ==========================================
+# DevOps Auto Installer - Git Ignore
+# ==========================================
+
+# Logs
+logs/*
+*.log
+
+# Keep logs directory in Git
+!logs/.gitkeep
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+
+# Downloaded archives
+*.tar.gz
+*.zip
+*.gz
+
+# Prometheus temporary files
+prometheus-installer/
+extracted/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Shell history
+.bash_history
+.history
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Ansible retry files
+*.retry
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Backup files
+*.backup
+*.old
