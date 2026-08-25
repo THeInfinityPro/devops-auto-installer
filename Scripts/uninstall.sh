@@ -24,17 +24,106 @@ confirm_action() {
     read -rp "Continue? [y/N]: " confirmation
 
     case "$confirmation" in
-
         y|Y)
             return 0
             ;;
-
         *)
             warning "Operation cancelled."
             return 1
             ;;
-
     esac
+}
+
+# ==========================================
+# Wait for Kubernetes Cleanup
+# ==========================================
+
+wait_for_kubernetes_cleanup() {
+
+    local total_seconds=60
+    local interval=10
+    local elapsed=0
+
+    info "Waiting for Kubernetes cleanup to settle..."
+
+    while [[ "$elapsed" -lt "$total_seconds" ]]; do
+
+        sleep "$interval"
+
+        elapsed=$((elapsed + interval))
+
+        info "Verification wait: ${elapsed}/${total_seconds} seconds"
+
+    done
+}
+
+# ==========================================
+# Kubernetes Cleanup Helper
+# ==========================================
+
+cleanup_kubernetes_files() {
+
+    info "Removing Kubernetes files and configuration..."
+
+    # Kubernetes configuration
+    rm -rf /etc/kubernetes
+    rm -rf /var/lib/kubelet
+    rm -rf /var/lib/etcd
+
+    # CNI configuration
+    rm -rf /etc/cni
+    rm -rf /opt/cni
+    rm -rf /var/lib/cni
+
+    # Runtime files
+    rm -rf /run/kubernetes
+    rm -rf /run/flannel
+
+    # Root kubeconfig
+    rm -rf /root/.kube
+
+    # Sudo user kubeconfig
+    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+
+        local user_home
+
+        user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+
+        if [[ -n "$user_home" && -d "$user_home" ]]; then
+
+            info "Removing kubectl configuration for user: $SUDO_USER"
+
+            rm -rf "$user_home/.kube"
+
+        fi
+
+    fi
+
+    # Other users
+    for user_home in /home/*; do
+
+        if [[ -d "$user_home" ]]; then
+            rm -rf "$user_home/.kube"
+        fi
+
+    done
+
+    # Systemd configuration
+    rm -f /etc/systemd/system/kubelet.service
+    rm -rf /etc/systemd/system/kubelet.service.d
+
+    # Kubernetes repository
+    rm -f /etc/apt/sources.list.d/kubernetes.list
+    rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+    # Kubernetes system configuration
+    rm -f /etc/modules-load.d/k8s.conf
+    rm -f /etc/sysctl.d/k8s.conf
+
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl reset-failed 2>/dev/null || true
+
+    sysctl --system >/dev/null 2>&1 || true
 }
 
 # ==========================================
@@ -52,6 +141,9 @@ remove_docker() {
     systemctl stop docker 2>/dev/null || true
     systemctl disable docker 2>/dev/null || true
 
+    systemctl stop containerd 2>/dev/null || true
+    systemctl disable containerd 2>/dev/null || true
+
     apt-get purge -y \
         docker-ce \
         docker-ce-cli \
@@ -62,12 +154,18 @@ remove_docker() {
         2>/dev/null || true
 
     apt-get autoremove -y
+    apt-get autoclean -y
 
     rm -rf /var/lib/docker
     rm -rf /var/lib/containerd
+    rm -rf /etc/containerd
 
     rm -f /etc/apt/sources.list.d/docker.list
     rm -f /etc/apt/keyrings/docker.asc
+
+    systemctl daemon-reload 2>/dev/null || true
+
+    apt-get update
 
     success "Docker removal completed."
 }
@@ -78,11 +176,29 @@ remove_docker() {
 
 remove_kubernetes() {
 
-    if ! confirm_action "This will remove the Kubernetes cluster and Kubernetes configuration."; then
+    if ! confirm_action "This will remove the Kubernetes cluster and all Kubernetes configuration."; then
         return
     fi
 
     info "Removing Kubernetes..."
+
+    # ------------------------------------------
+    # Stop Kubernetes Services
+    # ------------------------------------------
+
+    info "Stopping Kubernetes services..."
+
+    systemctl stop kubelet 2>/dev/null || true
+    systemctl disable kubelet 2>/dev/null || true
+
+    # Kill remaining Kubernetes processes
+    pkill -f kubelet 2>/dev/null || true
+    pkill -f kube-apiserver 2>/dev/null || true
+    pkill -f kube-controller-manager 2>/dev/null || true
+    pkill -f kube-scheduler 2>/dev/null || true
+    pkill -f etcd 2>/dev/null || true
+
+    sleep 5
 
     # ------------------------------------------
     # Reset Kubernetes Cluster
@@ -96,16 +212,15 @@ remove_kubernetes() {
 
     else
 
-        warning "kubeadm is not installed. Skipping cluster reset."
+        info "kubeadm not found. Skipping cluster reset."
 
     fi
 
     # ------------------------------------------
-    # Stop Kubernetes Services
+    # Stop Container Runtime
     # ------------------------------------------
 
-    systemctl stop kubelet 2>/dev/null || true
-    systemctl disable kubelet 2>/dev/null || true
+    systemctl stop containerd 2>/dev/null || true
 
     # ------------------------------------------
     # Remove Kubernetes Packages
@@ -113,112 +228,51 @@ remove_kubernetes() {
 
     info "Removing Kubernetes packages..."
 
-    apt-mark unhold kubelet kubeadm kubectl 2>/dev/null || true
-
-    apt-get purge -y \
+    apt-mark unhold \
         kubelet \
         kubeadm \
         kubectl \
+        2>/dev/null || true
+
+    apt-get purge -y \
+        kubeadm \
+        kubelet \
+        kubectl \
         kubernetes-cni \
+        cri-tools \
+        2>/dev/null || true
+
+    # Force purge if package database still contains entries
+    dpkg --purge \
+        kubeadm \
+        kubelet \
+        kubectl \
+        kubernetes-cni \
+        cri-tools \
         2>/dev/null || true
 
     apt-get autoremove -y
     apt-get autoclean -y
 
     # ------------------------------------------
-    # Remove Kubernetes Configuration
+    # Remove Files
     # ------------------------------------------
 
-    info "Removing Kubernetes configuration..."
-
-    rm -rf /etc/kubernetes
-    rm -rf /var/lib/kubelet
-    rm -rf /var/lib/etcd
-
-    # CNI configuration
-    rm -rf /etc/cni
-    rm -rf /opt/cni
-    rm -rf /var/lib/cni
+    cleanup_kubernetes_files
 
     # ------------------------------------------
-    # Remove Kubernetes Systemd Files
+    # Final Cleanup
     # ------------------------------------------
 
-    rm -f /etc/systemd/system/kubelet.service
-    rm -rf /etc/systemd/system/kubelet.service.d
+    sleep 5
 
-    systemctl daemon-reload
-
-    # ------------------------------------------
-    # Remove kubectl Configuration
-    # ------------------------------------------
-
-    # Root user
-    rm -rf /root/.kube
-
-    # User who ran sudo
-    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
-
-        USER_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
-
-        if [[ -n "$USER_HOME" && -d "$USER_HOME" ]]; then
-
-            info "Removing kubectl configuration for user: $SUDO_USER"
-
-            rm -rf "$USER_HOME/.kube"
-
-        fi
-
-    fi
-
-    # Other normal users
-    for USER_HOME in /home/*; do
-
-        if [[ -d "$USER_HOME" ]]; then
-            rm -rf "$USER_HOME/.kube"
-        fi
-
-    done
-
-    # ------------------------------------------
-    # Remove Kubernetes Repository
-    # ------------------------------------------
-
-    info "Removing Kubernetes repository..."
-
-    rm -f /etc/apt/sources.list.d/kubernetes.list
-    rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-
-    # ------------------------------------------
-    # Remove Kubernetes Kernel Configuration
-    # ------------------------------------------
-
-    rm -f /etc/modules-load.d/k8s.conf
-    rm -f /etc/sysctl.d/k8s.conf
-
-    sysctl --system >/dev/null 2>&1 || true
-
-    # ------------------------------------------
-    # Restart Containerd
-    # ------------------------------------------
-
-    # Containerd may be used by Docker, so don't remove it
-    if command_exists containerd; then
-
-        info "Restarting containerd..."
-
-        systemctl restart containerd 2>/dev/null || true
-        systemctl enable containerd 2>/dev/null || true
-
-    fi
-
-    # ------------------------------------------
-    # Update Package Cache
-    # ------------------------------------------
+    cleanup_kubernetes_files
 
     apt-get update
 
     success "Kubernetes removal completed."
+
+    wait_for_kubernetes_cleanup
 }
 
 # ==========================================
@@ -239,12 +293,17 @@ remove_jenkins() {
     apt-get purge -y jenkins 2>/dev/null || true
 
     apt-get autoremove -y
+    apt-get autoclean -y
 
     rm -rf /var/lib/jenkins
-    rm -rf /etc/default/jenkins
+    rm -f /etc/default/jenkins
 
     rm -f /etc/apt/sources.list.d/jenkins.list
     rm -f /etc/apt/keyrings/jenkins-keyring.asc
+
+    systemctl daemon-reload 2>/dev/null || true
+
+    apt-get update
 
     success "Jenkins removal completed."
 }
@@ -266,7 +325,7 @@ remove_prometheus() {
 
     rm -f /etc/systemd/system/prometheus.service
 
-    systemctl daemon-reload
+    systemctl daemon-reload 2>/dev/null || true
 
     userdel prometheus 2>/dev/null || true
 
@@ -296,6 +355,7 @@ remove_grafana() {
     apt-get purge -y grafana 2>/dev/null || true
 
     apt-get autoremove -y
+    apt-get autoclean -y
 
     rm -rf /etc/grafana
     rm -rf /var/lib/grafana
@@ -303,8 +363,208 @@ remove_grafana() {
 
     rm -f /etc/apt/sources.list.d/grafana.list
     rm -f /etc/apt/keyrings/grafana.asc
+    rm -f /etc/apt/keyrings/grafana.gpg
+
+    systemctl daemon-reload 2>/dev/null || true
+
+    apt-get update
 
     success "Grafana removal completed."
+}
+
+# ==========================================
+# Verify Kubernetes Removal
+# ==========================================
+
+verify_kubernetes_removal() {
+
+    local kubernetes_found=false
+
+    # ------------------------------------------
+    # Check Commands
+    # ------------------------------------------
+
+    for cmd in kubeadm kubelet kubectl; do
+
+        if command_exists "$cmd"; then
+
+            warning "Kubernetes command still found: $cmd"
+
+            kubernetes_found=true
+
+        fi
+
+    done
+
+    # ------------------------------------------
+    # Check Installed Packages
+    # ------------------------------------------
+
+    if dpkg-query -W \
+        -f='${db:Status-Abbrev} ${binary:Package}\n' \
+        2>/dev/null | \
+        grep -qE '^ii[[:space:]]+(kubeadm|kubelet|kubectl|kubernetes-cni|cri-tools)(:|[[:space:]])'; then
+
+        warning "Kubernetes packages are still installed."
+
+        kubernetes_found=true
+
+    fi
+
+    # ------------------------------------------
+    # Check Directories
+    # ------------------------------------------
+
+    for dir in \
+        /etc/kubernetes \
+        /var/lib/kubelet \
+        /var/lib/etcd \
+        /etc/cni \
+        /opt/cni \
+        /var/lib/cni \
+        /run/kubernetes
+    do
+
+        if [[ -e "$dir" ]]; then
+
+            warning "Kubernetes leftover found: $dir"
+
+            kubernetes_found=true
+
+        fi
+
+    done
+
+    # ------------------------------------------
+    # Result
+    # ------------------------------------------
+
+    if [[ "$kubernetes_found" == false ]]; then
+
+        success "Kubernetes completely removed."
+
+        return 0
+
+    else
+
+        warning "Kubernetes components or configuration still exist."
+
+        return 1
+
+    fi
+}
+
+# ==========================================
+# Verify Uninstall
+# ==========================================
+
+verify_uninstall() {
+
+    echo
+
+    info "Verifying software removal..."
+
+    local failures=0
+
+    # ------------------------------------------
+    # Docker
+    # ------------------------------------------
+
+    if command_exists docker; then
+
+        warning "Docker is still installed."
+
+        failures=$((failures + 1))
+
+    else
+
+        success "Docker removed."
+
+    fi
+
+    # ------------------------------------------
+    # Kubernetes
+    # ------------------------------------------
+
+    if ! verify_kubernetes_removal; then
+
+        failures=$((failures + 1))
+
+    fi
+
+    # ------------------------------------------
+    # Jenkins
+    # ------------------------------------------
+
+    if command_exists jenkins; then
+
+        warning "Jenkins is still installed."
+
+        failures=$((failures + 1))
+
+    elif systemctl list-unit-files 2>/dev/null | grep -q "^jenkins.service"; then
+
+        warning "Jenkins service still exists."
+
+        failures=$((failures + 1))
+
+    else
+
+        success "Jenkins removed."
+
+    fi
+
+    # ------------------------------------------
+    # Prometheus
+    # ------------------------------------------
+
+    if [[ -e "/opt/prometheus/prometheus" ]] || \
+       [[ -d "/etc/prometheus" ]] || \
+       systemctl list-unit-files 2>/dev/null | grep -q "^prometheus.service"; then
+
+        warning "Prometheus is still installed."
+
+        failures=$((failures + 1))
+
+    else
+
+        success "Prometheus removed."
+
+    fi
+
+    # ------------------------------------------
+    # Grafana
+    # ------------------------------------------
+
+    if command_exists grafana-server; then
+
+        warning "Grafana is still installed."
+
+        failures=$((failures + 1))
+
+    else
+
+        success "Grafana removed."
+
+    fi
+
+    # ------------------------------------------
+    # Final Result
+    # ------------------------------------------
+
+    echo
+
+    if [[ "$failures" -eq 0 ]]; then
+
+        success "=========================================="
+        success "All DevOps components have been removed."
+        success "=========================================="
+
+    else
+
+        warning "Some components were not completely removed."
+
+    fi
 }
 
 # ==========================================
@@ -333,7 +593,6 @@ remove_everything() {
 
         y|Y)
             ;;
-        
         *)
             warning "Complete removal cancelled."
             return
@@ -341,15 +600,11 @@ remove_everything() {
 
     esac
 
-    echo
-
     info "Starting complete DevOps software removal..."
 
-    # ==========================================
+    # ------------------------------------------
     # Grafana
-    # ==========================================
-
-    info "Removing Grafana..."
+    # ------------------------------------------
 
     systemctl stop grafana-server 2>/dev/null || true
     systemctl disable grafana-server 2>/dev/null || true
@@ -361,22 +616,19 @@ remove_everything() {
     rm -rf /var/log/grafana
 
     rm -f /etc/apt/sources.list.d/grafana.list
+    rm -f /etc/apt/keyrings/grafana.asc
     rm -f /etc/apt/keyrings/grafana.gpg
 
     success "Grafana removed."
 
-    # ==========================================
+    # ------------------------------------------
     # Prometheus
-    # ==========================================
-
-    info "Removing Prometheus..."
+    # ------------------------------------------
 
     systemctl stop prometheus 2>/dev/null || true
     systemctl disable prometheus 2>/dev/null || true
 
     rm -f /etc/systemd/system/prometheus.service
-
-    systemctl daemon-reload
 
     userdel prometheus 2>/dev/null || true
 
@@ -387,11 +639,9 @@ remove_everything() {
 
     success "Prometheus removed."
 
-    # ==========================================
+    # ------------------------------------------
     # Jenkins
-    # ==========================================
-
-    info "Removing Jenkins..."
+    # ------------------------------------------
 
     systemctl stop jenkins 2>/dev/null || true
     systemctl disable jenkins 2>/dev/null || true
@@ -399,22 +649,29 @@ remove_everything() {
     apt-get purge -y jenkins 2>/dev/null || true
 
     rm -rf /var/lib/jenkins
-    rm -rf /etc/default/jenkins
+    rm -f /etc/default/jenkins
 
     rm -f /etc/apt/sources.list.d/jenkins.list
     rm -f /etc/apt/keyrings/jenkins-keyring.asc
 
     success "Jenkins removed."
 
-    # ==========================================
+    # ------------------------------------------
     # Kubernetes
-    # ==========================================
+    # ------------------------------------------
 
     info "Removing Kubernetes..."
 
-    # ------------------------------------------
-    # Reset Cluster
-    # ------------------------------------------
+    systemctl stop kubelet 2>/dev/null || true
+    systemctl disable kubelet 2>/dev/null || true
+
+    pkill -f kubelet 2>/dev/null || true
+    pkill -f kube-apiserver 2>/dev/null || true
+    pkill -f kube-controller-manager 2>/dev/null || true
+    pkill -f kube-scheduler 2>/dev/null || true
+    pkill -f etcd 2>/dev/null || true
+
+    sleep 5
 
     if command_exists kubeadm; then
 
@@ -422,81 +679,43 @@ remove_everything() {
 
         kubeadm reset -f || true
 
-    else
-
-        info "kubeadm not found. Skipping cluster reset."
-
     fi
 
-    # ------------------------------------------
-    # Stop Kubelet
-    # ------------------------------------------
-
-    systemctl stop kubelet 2>/dev/null || true
-    systemctl disable kubelet 2>/dev/null || true
-
-    # ------------------------------------------
-    # Remove Kubernetes Packages
-    # ------------------------------------------
+    systemctl stop containerd 2>/dev/null || true
 
     apt-mark unhold kubelet kubeadm kubectl 2>/dev/null || true
 
     apt-get purge -y \
-        kubelet \
         kubeadm \
+        kubelet \
         kubectl \
+        kubernetes-cni \
+        cri-tools \
         2>/dev/null || true
 
-    # ------------------------------------------
-    # Remove Kubernetes Data
-    # ------------------------------------------
+    dpkg --purge \
+        kubeadm \
+        kubelet \
+        kubectl \
+        kubernetes-cni \
+        cri-tools \
+        2>/dev/null || true
 
-    rm -rf /etc/kubernetes
-    rm -rf /var/lib/kubelet
-    rm -rf /etc/cni
-    rm -rf /opt/cni
-    rm -rf /var/lib/cni
-
-    # ------------------------------------------
-    # Remove kubeconfig
-    # ------------------------------------------
-
-    rm -rf /root/.kube
-    rm -rf /home/*/.kube
-
-    # ------------------------------------------
-    # Remove Kubernetes Repository
-    # ------------------------------------------
-
-    rm -f /etc/apt/sources.list.d/kubernetes.list
-    rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-
-    # ------------------------------------------
-    # Remove Kubernetes Kernel Configuration
-    # ------------------------------------------
-
-    rm -f /etc/modules-load.d/k8s.conf
-    rm -f /etc/sysctl.d/k8s.conf
-
-    # ------------------------------------------
-    # Remove Kubernetes systemd leftovers
-    # ------------------------------------------
-
-    rm -f /etc/systemd/system/kubelet.service
-    rm -rf /etc/systemd/system/kubelet.service.d
-
-    systemctl daemon-reload
+    cleanup_kubernetes_files
 
     success "Kubernetes removed."
 
-    # ==========================================
+    # ------------------------------------------
     # Docker
-    # ==========================================
+    # ------------------------------------------
 
     info "Removing Docker..."
 
     systemctl stop docker 2>/dev/null || true
     systemctl disable docker 2>/dev/null || true
+
+    systemctl stop containerd 2>/dev/null || true
+    systemctl disable containerd 2>/dev/null || true
 
     apt-get purge -y \
         docker-ce \
@@ -509,458 +728,45 @@ remove_everything() {
 
     rm -rf /var/lib/docker
     rm -rf /var/lib/containerd
+    rm -rf /etc/containerd
 
     rm -f /etc/apt/sources.list.d/docker.list
     rm -f /etc/apt/keyrings/docker.asc
 
-    systemctl daemon-reload
+    # ------------------------------------------
+    # Final Package Cleanup
+    # ------------------------------------------
 
-# ------------------------------------------
-# Final Kubernetes verification
-# ------------------------------------------
+    info "Running final package cleanup..."
 
-echo
-info "Waiting for Kubernetes cleanup to settle..."
+    apt-get autoremove -y
+    apt-get autoclean -y
 
-for i in {1..6}; do
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl reset-failed 2>/dev/null || true
 
-    sleep 10
+    apt-get update
 
-    info "Cleanup verification wait: $((i * 10))/60 seconds"
+    # ------------------------------------------
+    # Wait for Kubernetes Cleanup
+    # ------------------------------------------
 
-done
+    wait_for_kubernetes_cleanup
 
-echo
-info "Performing final Kubernetes cleanup verification..."
-
-K8S_REMAINING=false
-
-# Check commands
-for cmd in kubeadm kubelet kubectl; do
-
-    if command -v "$cmd" >/dev/null 2>&1; then
-        warning "Kubernetes command still found: $cmd"
-        K8S_REMAINING=true
-    fi
-
-done
-
-# Check installed packages
-if dpkg-query -W \
-    -f='${db:Status-Abbrev} ${binary:Package}\n' \
-    2>/dev/null | \
-    grep -qE '^ii[[:space:]]+(kubeadm|kubelet|kubectl|kubernetes-cni)(:|[[:space:]])'; then
-
-    warning "Kubernetes packages still installed."
-    K8S_REMAINING=true
-
-fi
-
-# Check Kubernetes directories
-for dir in \
-    /etc/kubernetes \
-    /var/lib/kubelet \
-    /var/lib/etcd \
-    /etc/cni \
-    /opt/cni \
-    /var/lib/cni
-do
-
-    if [[ -e "$dir" ]]; then
-        warning "Kubernetes leftover found: $dir"
-        K8S_REMAINING=true
-    fi
-
-done
-
-# Final result
-if [[ "$K8S_REMAINING" == true ]]; then
-
-    warning "Kubernetes leftovers detected."
-
-else
-
-    success "Kubernetes completely removed."
-
-fi
-
-    # ==========================================
-    # Verify Jenkins
-    # ==========================================
-
-    if systemctl list-unit-files 2>/dev/null |
-        grep -q "^jenkins.service"; then
-
-        warning "Jenkins service still exists."
-        ((failures+=1))
-
-    else
-
-        success "Jenkins removed."
-
-    fi
-
-    # ==========================================
-    # Verify Prometheus
-    # ==========================================
-
-    if [[ -x "/opt/prometheus/prometheus" ]]; then
-
-        warning "Prometheus is still installed."
-        ((failures+=1))
-
-    else
-
-        success "Prometheus removed."
-
-    fi
-
-    # ==========================================
-    # Verify Grafana
-    # ==========================================
-
-    if command_exists grafana-server; then
-
-        warning "Grafana is still installed."
-        ((failures+=1))
-
-    else
-
-        success "Grafana removed."
-
-    fi
-
-    # ==========================================
-# Stop Kubernetes Services
-# ==========================================
-
-info "Stopping Kubernetes services..."
-
-systemctl stop kubelet 2>/dev/null || true
-systemctl disable kubelet 2>/dev/null || true
-
-systemctl stop containerd 2>/dev/null || true
-
-# Kill remaining Kubernetes processes
-pkill -f kubelet 2>/dev/null || true
-pkill -f kube-apiserver 2>/dev/null || true
-pkill -f kube-controller-manager 2>/dev/null || true
-pkill -f kube-scheduler 2>/dev/null || true
-pkill -f etcd 2>/dev/null || true
-
-sleep 5
-
-
-# ==========================================
-# Reset Kubernetes Cluster
-# ==========================================
-
-if command_exists kubeadm; then
-
-    info "Resetting Kubernetes cluster..."
-
-    kubeadm reset -f || true
-
-fi
-
-
-# ==========================================
-# Remove Kubernetes Packages
-# ==========================================
-
-info "Removing Kubernetes packages..."
-
-apt-mark unhold kubelet kubeadm kubectl 2>/dev/null || true
-
-apt-get purge -y \
-    kubeadm \
-    kubelet \
-    kubectl \
-    kubernetes-cni \
-    cri-tools \
-    2>/dev/null || true
-
-# Force package cleanup if packages remain
-dpkg --purge kubeadm kubelet kubectl 2>/dev/null || true
-
-apt-get autoremove -y
-apt-get autoclean -y
-
-
-# ==========================================
-# Remove Kubernetes Files
-# ==========================================
-
-info "Removing Kubernetes files..."
-
-rm -rf /etc/kubernetes
-rm -rf /var/lib/kubelet
-rm -rf /var/lib/etcd
-
-rm -rf /etc/cni
-rm -rf /opt/cni
-rm -rf /var/lib/cni
-
-rm -rf /run/kubernetes
-rm -rf /run/flannel
-
-rm -rf /root/.kube
-rm -rf /home/*/.kube
-
-
-# ==========================================
-# Remove Kubernetes Repository
-# ==========================================
-
-info "Removing Kubernetes repository..."
-
-rm -f /etc/apt/sources.list.d/kubernetes.list
-rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-
-
-# ==========================================
-# Remove Kubernetes System Configuration
-# ==========================================
-
-rm -f /etc/modules-load.d/k8s.conf
-rm -f /etc/sysctl.d/k8s.conf
-
-systemctl daemon-reload
-systemctl reset-failed 2>/dev/null || true
-
-sysctl --system >/dev/null 2>&1 || true
-
-
-# ==========================================
-# Final Directory Cleanup
-# ==========================================
-
-info "Performing final Kubernetes directory cleanup..."
-
-sleep 5
-
-rm -rf /etc/kubernetes
-rm -rf /var/lib/kubelet
-rm -rf /var/lib/etcd
-rm -rf /etc/cni
-rm -rf /opt/cni
-rm -rf /var/lib/cni
-rm -rf /run/kubernetes
-
-
-# ==========================================
-# Verify kubeadm package removal
-# ==========================================
-
-if command_exists kubeadm; then
-
-    warning "kubeadm command still exists."
-
-    KUBEADM_PATH=$(command -v kubeadm)
-
-    info "Removing kubeadm binary: $KUBEADM_PATH"
-
-    rm -f "$KUBEADM_PATH"
-
-fi
-
-
-success "Kubernetes removal completed."
-
-    # ==========================================
-# Verify Kubernetes
-# ==========================================
-
-info "Waiting for Kubernetes cleanup to settle..."
-
-for i in {1..6}; do
-
-    sleep 10
-
-    info "Verification wait: $((i * 10))/60 seconds"
-
-done
-
-KUBERNETES_FOUND=false
-
-# ------------------------------------------
-# Check Kubernetes commands
-# ------------------------------------------
-
-for cmd in kubeadm kubelet kubectl; do
-
-    if command_exists "$cmd"; then
-        warning "Kubernetes command still found: $cmd"
-        KUBERNETES_FOUND=true
-    fi
-
-done
-
-# ------------------------------------------
-# Check installed Kubernetes packages
-# ------------------------------------------
-
-if dpkg-query -W \
-    -f='${db:Status-Abbrev} ${binary:Package}\n' \
-    2>/dev/null | \
-    grep -qE '^ii[[:space:]]+(kubeadm|kubelet|kubectl|kubernetes-cni)(:|[[:space:]])'; then
-
-    warning "Kubernetes packages are still installed."
-    KUBERNETES_FOUND=true
-
-fi
-
-# ------------------------------------------
-# Check Kubernetes directories
-# ------------------------------------------
-
-for dir in \
-    /etc/kubernetes \
-    /var/lib/kubelet \
-    /var/lib/etcd \
-    /etc/cni \
-    /opt/cni \
-    /var/lib/cni
-do
-
-    if [[ -e "$dir" ]]; then
-        warning "Kubernetes leftover found: $dir"
-        KUBERNETES_FOUND=true
-    fi
-
-done
-
-# ------------------------------------------
-# Final Kubernetes Result
-# ------------------------------------------
-
-if [[ "$KUBERNETES_FOUND" == true ]]; then
-
-    warning "Kubernetes components or configuration still exist."
-    ((failures+=1))
-
-else
-
-    success "Kubernetes completely removed."
-
-fi
-
-    # ==========================================
-    # Summary
-    # ==========================================
+    # ------------------------------------------
+    # Final Verification
+    # ------------------------------------------
 
     echo
 
-    if [[ "$failures" -eq 0 ]]; then
+    verify_uninstall
 
-        success "Uninstall verification completed successfully."
+    echo
 
-    else
-
-        warning "Some components were not completely removed."
-
-    fi
+    success "=========================================="
+    success "COMPLETE DEVOPS REMOVAL FINISHED"
+    success "=========================================="
 }
-
-# ==========================================
-# Verify Uninstall
-# ==========================================
-
-verify_uninstall() {
-
-    echo
-
-    info "Verifying software removal..."
-
-    local failures=0
-
-    # Docker verification
-    if command_exists docker; then
-        warning "Docker is still installed."
-        ((failures+=1))
-    else
-        success "Docker removed."
-    fi
-
-
-    # ==========================================
-    # Verify Kubernetes
-    # ==========================================
-
-    KUBERNETES_FOUND=false
-
-    for cmd in kubeadm kubelet kubectl; do
-
-        if command_exists "$cmd"; then
-            warning "Kubernetes command still found: $cmd"
-            KUBERNETES_FOUND=true
-        fi
-
-    done
-
-
-    # Check Kubernetes packages
-    if dpkg-query -W \
-        -f='${db:Status-Abbrev} ${binary:Package}\n' \
-        2>/dev/null | \
-        grep -qE '^ii[[:space:]]+(kubeadm|kubelet|kubectl|kubernetes-cni)(:|[[:space:]])'; then
-
-        warning "Kubernetes packages are still installed."
-        KUBERNETES_FOUND=true
-
-    fi
-
-
-    # Check Kubernetes directories
-    for dir in \
-        /etc/kubernetes \
-        /var/lib/kubelet \
-        /var/lib/etcd \
-        /etc/cni \
-        /opt/cni \
-        /var/lib/cni
-    do
-
-        if [[ -e "$dir" ]]; then
-            warning "Kubernetes leftover found: $dir"
-            KUBERNETES_FOUND=true
-        fi
-
-    done
-
-
-    # Final Kubernetes result
-    if [[ "$KUBERNETES_FOUND" == true ]]; then
-
-        warning "Kubernetes components or configuration still exist."
-        ((failures+=1))
-
-    else
-
-        success "Kubernetes completely removed."
-
-    fi
-
-
-    # ==========================================
-    # Final Result
-    # ==========================================
-
-    echo
-
-    if [[ "$failures" -eq 0 ]]; then
-
-        success "All selected DevOps components have been completely removed."
-
-    else
-
-        warning "Some components were not completely removed."
-
-    fi
-
-}
-
-
 
 # ==========================================
 # Uninstall Menu
@@ -1047,8 +853,7 @@ main() {
 
     initialize
 
-    while true
-    do
+    while true; do
 
         show_uninstall_menu
 
