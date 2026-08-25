@@ -160,22 +160,28 @@ configure_containerd() {
         exit 1
     fi
 
-    # Verify CRI
-    info "Verifying containerd CRI support..."
+  # ==========================================
+# Verify Containerd CRI Support
+# ==========================================
 
-    if ctr plugins ls 2>/dev/null | grep -qE 'io.containerd.grpc.v1.cri.*ok'; then
+info "Verifying containerd CRI support..."
 
-        success "Containerd CRI plugin is available."
+if ctr plugins ls 2>/dev/null | \
+    awk '$1 ~ /cri/ && $NF == "ok" { found=1 } END { exit !found }'
+then
 
-    else
+    success "Containerd CRI plugin is available."
 
-        error "Containerd CRI plugin is not available."
+else
 
-        ctr plugins ls | grep -i cri || true
+    error "Containerd CRI plugin is not available."
 
-        exit 1
+    info "CRI plugin status:"
+    ctr plugins ls 2>/dev/null | grep -i cri || true
 
-    fi
+    exit 1
+
+fi
 }
 
 # ==========================================
@@ -279,6 +285,8 @@ verify_kubernetes() {
     info "Kubernetes cluster has NOT been initialized."
     info "Run the cluster initialization phase separately."
 }
+
+
 
 # ==========================================
 # Main

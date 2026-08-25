@@ -726,6 +726,106 @@ fi
 }
 
 # ==========================================
+# Verify Uninstall
+# ==========================================
+
+verify_uninstall() {
+
+    echo
+
+    info "Verifying software removal..."
+
+    local failures=0
+
+    # Docker verification
+    if command_exists docker; then
+        warning "Docker is still installed."
+        ((failures+=1))
+    else
+        success "Docker removed."
+    fi
+
+
+    # ==========================================
+    # Verify Kubernetes
+    # ==========================================
+
+    KUBERNETES_FOUND=false
+
+    for cmd in kubeadm kubelet kubectl; do
+
+        if command_exists "$cmd"; then
+            warning "Kubernetes command still found: $cmd"
+            KUBERNETES_FOUND=true
+        fi
+
+    done
+
+
+    # Check Kubernetes packages
+    if dpkg-query -W \
+        -f='${db:Status-Abbrev} ${binary:Package}\n' \
+        2>/dev/null | \
+        grep -qE '^ii[[:space:]]+(kubeadm|kubelet|kubectl|kubernetes-cni)(:|[[:space:]])'; then
+
+        warning "Kubernetes packages are still installed."
+        KUBERNETES_FOUND=true
+
+    fi
+
+
+    # Check Kubernetes directories
+    for dir in \
+        /etc/kubernetes \
+        /var/lib/kubelet \
+        /var/lib/etcd \
+        /etc/cni \
+        /opt/cni \
+        /var/lib/cni
+    do
+
+        if [[ -e "$dir" ]]; then
+            warning "Kubernetes leftover found: $dir"
+            KUBERNETES_FOUND=true
+        fi
+
+    done
+
+
+    # Final Kubernetes result
+    if [[ "$KUBERNETES_FOUND" == true ]]; then
+
+        warning "Kubernetes components or configuration still exist."
+        ((failures+=1))
+
+    else
+
+        success "Kubernetes completely removed."
+
+    fi
+
+
+    # ==========================================
+    # Final Result
+    # ==========================================
+
+    echo
+
+    if [[ "$failures" -eq 0 ]]; then
+
+        success "All selected DevOps components have been completely removed."
+
+    else
+
+        warning "Some components were not completely removed."
+
+    fi
+
+}
+
+
+
+# ==========================================
 # Uninstall Menu
 # ==========================================
 
