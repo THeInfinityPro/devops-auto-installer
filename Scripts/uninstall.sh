@@ -482,15 +482,68 @@ verify_uninstall() {
 
     fi
 
-    # ------------------------------------------
-    # Kubernetes
-    # ------------------------------------------
+   # ==========================================
+# Verify Kubernetes
+# ==========================================
 
-    if ! verify_kubernetes_removal; then
+KUBERNETES_FOUND=false
 
-        failures=$((failures + 1))
+# Clear Bash command cache
+hash -r 2>/dev/null || true
+
+# Check Kubernetes commands
+for cmd in kubeadm kubelet kubectl; do
+
+    if command -v "$cmd" >/dev/null 2>&1; then
+
+        warning "Kubernetes command still found: $cmd"
+        KUBERNETES_FOUND=true
 
     fi
+
+done
+
+# Check installed Kubernetes packages
+if dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package}\n' 2>/dev/null | \
+    grep -qE '^ii[[:space:]]+(kubeadm|kubelet|kubectl|kubernetes-cni)(:|[[:space:]])'; then
+
+    warning "Kubernetes packages are still installed."
+    KUBERNETES_FOUND=true
+
+fi
+
+# Check Kubernetes directories
+K8S_DIRECTORIES=(
+    "/etc/kubernetes"
+    "/var/lib/kubelet"
+    "/var/lib/etcd"
+    "/etc/cni"
+    "/opt/cni/bin"
+    "/var/lib/cni"
+)
+
+for dir in "${K8S_DIRECTORIES[@]}"; do
+
+    if [[ -e "$dir" ]]; then
+
+        warning "Kubernetes leftover found: $dir"
+        KUBERNETES_FOUND=true
+
+    fi
+
+done
+
+# Final Kubernetes result
+if [[ "$KUBERNETES_FOUND" == false ]]; then
+
+    success "Kubernetes completely removed."
+
+else
+
+    warning "Kubernetes components or configuration still exist."
+    ((failures+=1))
+
+fi
 
     # ------------------------------------------
     # Jenkins
