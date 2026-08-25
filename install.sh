@@ -225,6 +225,8 @@ handle_choice() {
 
 main() {
 
+    reset_log
+
     initialize
 
     log "DevOps Auto Installer started."
