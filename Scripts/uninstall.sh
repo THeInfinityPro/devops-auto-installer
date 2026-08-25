@@ -631,6 +631,143 @@ fi
     fi
 
     # ==========================================
+# Stop Kubernetes Services
+# ==========================================
+
+info "Stopping Kubernetes services..."
+
+systemctl stop kubelet 2>/dev/null || true
+systemctl disable kubelet 2>/dev/null || true
+
+systemctl stop containerd 2>/dev/null || true
+
+# Kill remaining Kubernetes processes
+pkill -f kubelet 2>/dev/null || true
+pkill -f kube-apiserver 2>/dev/null || true
+pkill -f kube-controller-manager 2>/dev/null || true
+pkill -f kube-scheduler 2>/dev/null || true
+pkill -f etcd 2>/dev/null || true
+
+sleep 5
+
+
+# ==========================================
+# Reset Kubernetes Cluster
+# ==========================================
+
+if command_exists kubeadm; then
+
+    info "Resetting Kubernetes cluster..."
+
+    kubeadm reset -f || true
+
+fi
+
+
+# ==========================================
+# Remove Kubernetes Packages
+# ==========================================
+
+info "Removing Kubernetes packages..."
+
+apt-mark unhold kubelet kubeadm kubectl 2>/dev/null || true
+
+apt-get purge -y \
+    kubeadm \
+    kubelet \
+    kubectl \
+    kubernetes-cni \
+    cri-tools \
+    2>/dev/null || true
+
+# Force package cleanup if packages remain
+dpkg --purge kubeadm kubelet kubectl 2>/dev/null || true
+
+apt-get autoremove -y
+apt-get autoclean -y
+
+
+# ==========================================
+# Remove Kubernetes Files
+# ==========================================
+
+info "Removing Kubernetes files..."
+
+rm -rf /etc/kubernetes
+rm -rf /var/lib/kubelet
+rm -rf /var/lib/etcd
+
+rm -rf /etc/cni
+rm -rf /opt/cni
+rm -rf /var/lib/cni
+
+rm -rf /run/kubernetes
+rm -rf /run/flannel
+
+rm -rf /root/.kube
+rm -rf /home/*/.kube
+
+
+# ==========================================
+# Remove Kubernetes Repository
+# ==========================================
+
+info "Removing Kubernetes repository..."
+
+rm -f /etc/apt/sources.list.d/kubernetes.list
+rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+
+# ==========================================
+# Remove Kubernetes System Configuration
+# ==========================================
+
+rm -f /etc/modules-load.d/k8s.conf
+rm -f /etc/sysctl.d/k8s.conf
+
+systemctl daemon-reload
+systemctl reset-failed 2>/dev/null || true
+
+sysctl --system >/dev/null 2>&1 || true
+
+
+# ==========================================
+# Final Directory Cleanup
+# ==========================================
+
+info "Performing final Kubernetes directory cleanup..."
+
+sleep 5
+
+rm -rf /etc/kubernetes
+rm -rf /var/lib/kubelet
+rm -rf /var/lib/etcd
+rm -rf /etc/cni
+rm -rf /opt/cni
+rm -rf /var/lib/cni
+rm -rf /run/kubernetes
+
+
+# ==========================================
+# Verify kubeadm package removal
+# ==========================================
+
+if command_exists kubeadm; then
+
+    warning "kubeadm command still exists."
+
+    KUBEADM_PATH=$(command -v kubeadm)
+
+    info "Removing kubeadm binary: $KUBEADM_PATH"
+
+    rm -f "$KUBEADM_PATH"
+
+fi
+
+
+success "Kubernetes removal completed."
+
+    # ==========================================
 # Verify Kubernetes
 # ==========================================
 
