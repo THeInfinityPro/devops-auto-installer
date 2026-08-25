@@ -103,44 +103,78 @@ EOF
 
 configure_containerd() {
 
+    info "Configuring containerd for Kubernetes..."
+
     if ! command_exists containerd; then
-
-        warning "Containerd is not installed."
-
-        info "Installing containerd..."
-
-        apt-get update
-        apt-get install -y containerd
+        error "containerd is not installed."
+        error "Install Docker/containerd before installing Kubernetes."
+        exit 1
     fi
 
-    info "Configuring containerd..."
+    info "Containerd version: $(containerd --version)"
+
+    systemctl stop containerd 2>/dev/null || true
 
     mkdir -p /etc/containerd
 
-    if [[ ! -f /etc/containerd/config.toml ]]; then
-
-        containerd config default > /etc/containerd/config.toml
-
-        info "Default containerd configuration created."
-
-    else
-
-        info "Existing containerd configuration detected."
-
+    # Backup existing configuration
+    if [[ -f /etc/containerd/config.toml ]]; then
+        cp \
+            /etc/containerd/config.toml \
+            /etc/containerd/config.toml.backup
     fi
 
-    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' \
+    # Generate clean containerd configuration
+    containerd config default > /etc/containerd/config.toml
+
+    # Enable systemd cgroups for Kubernetes
+    sed -i \
+        's/SystemdCgroup = false/SystemdCgroup = true/' \
         /etc/containerd/config.toml
 
-    systemctl enable containerd
-    systemctl restart containerd
+    # Ensure CRI plugin is not disabled
+    sed -i \
+        '/disabled_plugins.*cri/d' \
+        /etc/containerd/config.toml
 
-    if systemctl is-active --quiet containerd; then
-        success "Containerd configured and running."
-    else
+    systemctl daemon-reload
+    systemctl restart containerd
+    systemctl enable containerd
+
+    # Wait for containerd
+    info "Waiting for containerd to start..."
+
+    for i in {1..6}; do
+
+        if systemctl is-active --quiet containerd; then
+            success "Containerd service is running."
+            break
+        fi
+
+        sleep 5
+    done
+
+    if ! systemctl is-active --quiet containerd; then
         error "Containerd failed to start."
         systemctl status containerd --no-pager
         exit 1
+    fi
+
+    # Verify CRI
+    info "Verifying containerd CRI support..."
+
+    if ctr plugins ls 2>/dev/null | grep -qE 'io.containerd.grpc.v1.cri.*ok'; then
+
+        success "Containerd CRI plugin is available."
+
+    else
+
+        error "Containerd CRI plugin is not available."
+
+        ctr plugins ls | grep -i cri || true
+
+        exit 1
+
     fi
 }
 
