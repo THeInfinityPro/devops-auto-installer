@@ -170,6 +170,10 @@ handle_choice() {
     case "$choice" in
 
         1)
+            bash "$SCRIPT_DIR/Scripts/health-check.sh"
+            ;;
+
+        1)
             bash "$SCRIPT_DIR/Scripts/docker.sh"
             ;;
 
