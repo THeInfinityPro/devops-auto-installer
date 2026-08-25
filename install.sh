@@ -49,18 +49,24 @@ pause() {
 
 show_menu() {
 
-    echo "1. Health Check / Port Check"
-    echo "2. Install Docker"
-    echo "3. Install Kubernetes"
-    echo "4. Setup Kubernetes Cluster"
-    echo "5. Install Jenkins"
-    echo "6. Install Prometheus"
-    echo "7. Install Grafana"
+    echo "  INSTALLATION"
+    echo "------------------------------------------"
+    echo "1. Install Docker"
+    echo "2. Install Kubernetes"
+    echo "3. Setup Kubernetes Cluster"
+    echo "4. Install Jenkins"
+    echo "5. Install Prometheus"
+    echo "6. Install Grafana"
     echo
-    echo "8. Install Everything"
-    echo "9. Verify Installation"
+
+    echo "  MANAGEMENT"
+    echo "------------------------------------------"
+    echo "7. Install Everything"
+    echo "8. Verify Installation"
+    echo "9. Health Check"
     echo "10. Uninstall"
     echo
+
     echo "0. Exit"
     echo
 }
@@ -80,9 +86,8 @@ install_everything() {
 
     info "Starting complete DevOps installation..."
 
-
     # ------------------------------------------
-    # Docker
+    # Step 1 - Docker
     # ------------------------------------------
 
     info "Step 1/7: Installing Docker..."
@@ -93,7 +98,7 @@ install_everything() {
 
 
     # ------------------------------------------
-    # Kubernetes Components
+    # Step 2 - Kubernetes Components
     # ------------------------------------------
 
     info "Step 2/7: Installing Kubernetes components..."
@@ -104,7 +109,7 @@ install_everything() {
 
 
     # ------------------------------------------
-    # Kubernetes Cluster
+    # Step 3 - Kubernetes Cluster
     # ------------------------------------------
 
     info "Step 3/7: Setting up Kubernetes cluster..."
@@ -115,7 +120,7 @@ install_everything() {
 
 
     # ------------------------------------------
-    # Jenkins
+    # Step 4 - Jenkins
     # ------------------------------------------
 
     info "Step 4/7: Installing Jenkins..."
@@ -126,7 +131,7 @@ install_everything() {
 
 
     # ------------------------------------------
-    # Prometheus
+    # Step 5 - Prometheus
     # ------------------------------------------
 
     info "Step 5/7: Installing Prometheus..."
@@ -137,7 +142,7 @@ install_everything() {
 
 
     # ------------------------------------------
-    # Grafana
+    # Step 6 - Grafana
     # ------------------------------------------
 
     info "Step 6/7: Installing Grafana..."
@@ -148,7 +153,7 @@ install_everything() {
 
 
     # ------------------------------------------
-    # Verification
+    # Step 7 - Verification
     # ------------------------------------------
 
     info "Step 7/7: Verifying complete installation..."
@@ -157,7 +162,7 @@ install_everything() {
 
 
     # ------------------------------------------
-    # Complete
+    # Installation Complete
     # ------------------------------------------
 
     echo
@@ -182,111 +187,113 @@ handle_choice() {
 
     case "$choice" in
 
+        # --------------------------------------
+        # Install Docker
+        # --------------------------------------
+
         1)
-
-            info "Starting Health Check..."
-
-            bash "$SCRIPT_DIR/Scripts/health-check.sh"
-
+            bash "$SCRIPT_DIR/Scripts/docker.sh"
             ;;
 
+
+        # --------------------------------------
+        # Install Kubernetes
+        # --------------------------------------
 
         2)
-
-            info "Starting Docker installation..."
-
-            bash "$SCRIPT_DIR/Scripts/docker.sh"
-
+            bash "$SCRIPT_DIR/Scripts/kubernetes.sh"
             ;;
 
+
+        # --------------------------------------
+        # Setup Kubernetes Cluster
+        # --------------------------------------
 
         3)
-
-            info "Starting Kubernetes installation..."
-
-            bash "$SCRIPT_DIR/Scripts/kubernetes.sh"
-
+            bash "$SCRIPT_DIR/Scripts/kubernetes-cluster.sh"
             ;;
 
+
+        # --------------------------------------
+        # Install Jenkins
+        # --------------------------------------
 
         4)
-
-            info "Starting Kubernetes cluster setup..."
-
-            bash "$SCRIPT_DIR/Scripts/kubernetes-cluster.sh"
-
+            bash "$SCRIPT_DIR/Scripts/jenkins.sh"
             ;;
 
+
+        # --------------------------------------
+        # Install Prometheus
+        # --------------------------------------
 
         5)
-
-            info "Starting Jenkins installation..."
-
-            bash "$SCRIPT_DIR/Scripts/jenkins.sh"
-
+            bash "$SCRIPT_DIR/Scripts/prometheus.sh"
             ;;
 
+
+        # --------------------------------------
+        # Install Grafana
+        # --------------------------------------
 
         6)
-
-            info "Starting Prometheus installation..."
-
-            bash "$SCRIPT_DIR/Scripts/prometheus.sh"
-
+            bash "$SCRIPT_DIR/Scripts/grafana.sh"
             ;;
 
+
+        # --------------------------------------
+        # Install Everything
+        # --------------------------------------
 
         7)
-
-            info "Starting Grafana installation..."
-
-            bash "$SCRIPT_DIR/Scripts/grafana.sh"
-
+            install_everything
             ;;
 
+
+        # --------------------------------------
+        # Verify Installation
+        # --------------------------------------
 
         8)
-
-            install_everything
-
+            bash "$SCRIPT_DIR/Scripts/verify.sh"
             ;;
 
+
+        # --------------------------------------
+        # Health Check
+        # --------------------------------------
 
         9)
-
-            info "Starting installation verification..."
-
-            bash "$SCRIPT_DIR/Scripts/verify.sh"
-
+            bash "$SCRIPT_DIR/Scripts/health-check.sh"
             ;;
 
+
+        # --------------------------------------
+        # Uninstall
+        # --------------------------------------
 
         10)
-
-            info "Starting DevOps uninstaller..."
-
             bash "$SCRIPT_DIR/Scripts/uninstall.sh"
-
             ;;
 
+
+        # --------------------------------------
+        # Exit
+        # --------------------------------------
 
         0)
-
             echo
-
             success "Exiting DevOps Auto Installer."
-
-            log "DevOps Auto Installer exited."
-
             exit 0
-
             ;;
 
 
+        # --------------------------------------
+        # Invalid Option
+        # --------------------------------------
+
         *)
-
             warning "Invalid option. Please choose a valid option."
-
             ;;
 
     esac
@@ -294,30 +301,16 @@ handle_choice() {
 
 
 # ==========================================
-# Main
+# Main Function
 # ==========================================
 
 main() {
 
-    # ------------------------------------------
-    # Initialize Environment
-    # ------------------------------------------
+    reset_log
 
     initialize
 
-
-    # ------------------------------------------
-    # Log Start
-    # ------------------------------------------
-
-    log "=========================================="
     log "DevOps Auto Installer started."
-    log "=========================================="
-
-
-    # ------------------------------------------
-    # Main Menu Loop
-    # ------------------------------------------
 
     while true
     do
