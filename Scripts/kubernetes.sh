@@ -103,78 +103,47 @@ EOF
 
 configure_containerd() {
 
-    info "Checking container runtime..."
-
     if ! command_exists containerd; then
 
-        error "Containerd is not installed."
-        error "Install Docker first because Docker provides containerd.io."
+        warning "Containerd is not installed."
 
-        exit 1
+        info "Installing containerd..."
+
+        apt-get update
+        apt-get install -y containerd
     fi
 
-    CONTAINERD_VERSION="$(containerd --version)"
-
-    info "Containerd detected: $CONTAINERD_VERSION"
-
-    info "Configuring containerd for Kubernetes..."
+    info "Configuring containerd..."
 
     mkdir -p /etc/containerd
 
-    # Backup existing configuration
-    if [[ -f /etc/containerd/config.toml ]]; then
+    if [[ ! -f /etc/containerd/config.toml ]]; then
 
-        cp \
-            /etc/containerd/config.toml \
-            /etc/containerd/config.toml.backup
+        containerd config default > /etc/containerd/config.toml
 
-        info "Existing containerd configuration backed up."
+        info "Default containerd configuration created."
+
+    else
+
+        info "Existing containerd configuration detected."
 
     fi
 
-    # Generate a fresh configuration
-    containerd config default > /etc/containerd/config.toml
-
-    # Enable systemd cgroups
-    sed -i \
-        's/SystemdCgroup = false/SystemdCgroup = true/' \
+    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' \
         /etc/containerd/config.toml
 
-    # Ensure CRI is not disabled
-    sed -i \
-        '/disabled_plugins.*cri/d' \
-        /etc/containerd/config.toml
-
-    systemctl restart containerd
     systemctl enable containerd
-
-    sleep 5
+    systemctl restart containerd
 
     if systemctl is-active --quiet containerd; then
-
-        success "Containerd is running."
-
+        success "Containerd configured and running."
     else
-
         error "Containerd failed to start."
-
         systemctl status containerd --no-pager
-
         exit 1
-
-    fi
-
-    # Verify CRI plugin
-    if ctr plugins ls 2>/dev/null | grep -q "io.containerd.grpc.v1.cri.*ok"; then
-
-        success "Containerd CRI plugin is available."
-
-    else
-
-        warning "Containerd CRI plugin verification failed."
-        info "Kubernetes cluster initialization may fail."
     fi
 }
+
 # ==========================================
 # Install Kubernetes Repository
 # ==========================================

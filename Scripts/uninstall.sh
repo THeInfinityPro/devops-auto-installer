@@ -515,162 +515,68 @@ remove_everything() {
 
     systemctl daemon-reload
 
-    # ==========================================
-# Final Kubernetes Leftover Cleanup
-# ==========================================
+# ------------------------------------------
+# Final Kubernetes verification
+# ------------------------------------------
 
-info "Performing final Kubernetes cleanup..."
+echo
+info "Waiting for Kubernetes cleanup to settle..."
 
-systemctl stop kubelet 2>/dev/null || true
+for i in {1..6}; do
 
-rm -rf /etc/kubernetes
-rm -rf /var/lib/kubelet
-rm -rf /var/lib/etcd
-rm -rf /etc/cni
-rm -rf /opt/cni
-rm -rf /var/lib/cni
+    sleep 10
 
-rm -rf /root/.kube
-rm -rf /home/*/.kube
+    info "Cleanup verification wait: $((i * 10))/60 seconds"
 
-success "Final Kubernetes cleanup completed."
+done
 
-    # ==========================================
-    # Final Cleanup
-    # ==========================================
+echo
+info "Performing final Kubernetes cleanup verification..."
 
-    info "Running final package cleanup..."
+K8S_REMAINING=false
 
-    apt-get autoremove -y
-    apt-get autoclean -y
-    apt-get update
+# Check commands
+for cmd in kubeadm kubelet kubectl; do
 
-    # ------------------------------------------
-    # Reload system configuration
-    # ------------------------------------------
-
-    sysctl --system >/dev/null 2>&1 || true
-
-    # ------------------------------------------
-    # Final Kubernetes verification
-    # ------------------------------------------
-
-    echo
-    info "Performing final Kubernetes cleanup verification..."
-
-    K8S_REMAINING=false
-
-    if command -v kubeadm >/dev/null 2>&1; then
+    if command -v "$cmd" >/dev/null 2>&1; then
+        warning "Kubernetes command still found: $cmd"
         K8S_REMAINING=true
     fi
 
-    if command -v kubelet >/dev/null 2>&1; then
-        K8S_REMAINING=true
-    fi
+done
 
-    if command -v kubectl >/dev/null 2>&1; then
-        K8S_REMAINING=true
-    fi
+# Check installed packages
+if dpkg-query -W \
+    -f='${db:Status-Abbrev} ${binary:Package}\n' \
+    2>/dev/null | \
+    grep -qE '^ii[[:space:]]+(kubeadm|kubelet|kubectl|kubernetes-cni)(:|[[:space:]])'; then
 
-    if [[ -d "/etc/kubernetes" ]]; then
-        K8S_REMAINING=true
-    fi
+    warning "Kubernetes packages still installed."
+    K8S_REMAINING=true
 
-    if [[ -d "/var/lib/kubelet" ]]; then
-        K8S_REMAINING=true
-    fi
-
-    if [[ -d "/etc/cni" ]]; then
-        K8S_REMAINING=true
-    fi
-
-    if [[ -d "/var/lib/cni" ]]; then
-        K8S_REMAINING=true
-    fi
-
-    if [[ "$K8S_REMAINING" == true ]]; then
-
-        warning "Kubernetes leftovers detected."
-
-    else
-
-        success "Kubernetes completely removed."
-
-    fi
-
-    echo
-    success "=========================================="
-    success "COMPLETE DEVOPS REMOVAL FINISHED"
-    success "=========================================="
-}
-
-# ==========================================
-# Verify Uninstall
-# ==========================================
-
-verify_uninstall() {
-
-    echo
-
-    info "Verifying software removal..."
-
-    local failures=0
-
-    # ==========================================
-    # Verify Docker
-    # ==========================================
-
-    if command_exists docker; then
-
-        warning "Docker is still installed."
-        ((failures+=1))
-
-    else
-
-        success "Docker removed."
-
-    fi
-
-# ==========================================
-# Verify Kubernetes
-# ==========================================
-
-KUBERNETES_FOUND=false
-
-# Check binaries
-if command_exists kubeadm; then
-    KUBERNETES_FOUND=true
 fi
 
-if command_exists kubelet; then
-    KUBERNETES_FOUND=true
-fi
+# Check Kubernetes directories
+for dir in \
+    /etc/kubernetes \
+    /var/lib/kubelet \
+    /var/lib/etcd \
+    /etc/cni \
+    /opt/cni \
+    /var/lib/cni
+do
 
-if command_exists kubectl; then
-    KUBERNETES_FOUND=true
-fi
+    if [[ -e "$dir" ]]; then
+        warning "Kubernetes leftover found: $dir"
+        K8S_REMAINING=true
+    fi
 
-# Check installed packages only
-if dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package}\n' 2>/dev/null |
-    grep -qE '^ii[[:space:]]+(kubeadm|kubelet|kubectl)(:|[[:space:]])'; then
-
-    KUBERNETES_FOUND=true
-fi
-
-# Check important Kubernetes directories
-if [[ -d "/etc/kubernetes" ]]; then
-    KUBERNETES_FOUND=true
-fi
-
-if [[ -d "/var/lib/kubelet" ]]; then
-    KUBERNETES_FOUND=true
-fi
+done
 
 # Final result
-if [[ "$KUBERNETES_FOUND" == true ]]; then
+if [[ "$K8S_REMAINING" == true ]]; then
 
-    warning "Kubernetes components or configuration still exist."
-    ((failures+=1))
+    warning "Kubernetes leftovers detected."
 
 else
 
@@ -723,6 +629,84 @@ fi
         success "Grafana removed."
 
     fi
+
+    # ==========================================
+# Verify Kubernetes
+# ==========================================
+
+info "Waiting for Kubernetes cleanup to settle..."
+
+for i in {1..6}; do
+
+    sleep 10
+
+    info "Verification wait: $((i * 10))/60 seconds"
+
+done
+
+KUBERNETES_FOUND=false
+
+# ------------------------------------------
+# Check Kubernetes commands
+# ------------------------------------------
+
+for cmd in kubeadm kubelet kubectl; do
+
+    if command_exists "$cmd"; then
+        warning "Kubernetes command still found: $cmd"
+        KUBERNETES_FOUND=true
+    fi
+
+done
+
+# ------------------------------------------
+# Check installed Kubernetes packages
+# ------------------------------------------
+
+if dpkg-query -W \
+    -f='${db:Status-Abbrev} ${binary:Package}\n' \
+    2>/dev/null | \
+    grep -qE '^ii[[:space:]]+(kubeadm|kubelet|kubectl|kubernetes-cni)(:|[[:space:]])'; then
+
+    warning "Kubernetes packages are still installed."
+    KUBERNETES_FOUND=true
+
+fi
+
+# ------------------------------------------
+# Check Kubernetes directories
+# ------------------------------------------
+
+for dir in \
+    /etc/kubernetes \
+    /var/lib/kubelet \
+    /var/lib/etcd \
+    /etc/cni \
+    /opt/cni \
+    /var/lib/cni
+do
+
+    if [[ -e "$dir" ]]; then
+        warning "Kubernetes leftover found: $dir"
+        KUBERNETES_FOUND=true
+    fi
+
+done
+
+# ------------------------------------------
+# Final Kubernetes Result
+# ------------------------------------------
+
+if [[ "$KUBERNETES_FOUND" == true ]]; then
+
+    warning "Kubernetes components or configuration still exist."
+    ((failures+=1))
+
+else
+
+    success "Kubernetes completely removed."
+
+fi
 
     # ==========================================
     # Summary
