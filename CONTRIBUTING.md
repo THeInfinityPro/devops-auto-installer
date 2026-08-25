@@ -15,5 +15,5 @@ Fork the repository to your GitHub account.
 ### 2. Clone Your Fork
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/devops-auto-installer.git
+git clone https://github.com/THeInfinityPro/devops-auto-installer.git
 cd devops-auto-installer
