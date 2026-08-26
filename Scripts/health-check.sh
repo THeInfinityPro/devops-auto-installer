@@ -278,44 +278,79 @@ check_cloud_firewall_notice() {
 # Existing Components Check
 # ==========================================
 
+# ==========================================
+# Existing Components Check
+# ==========================================
+
 check_existing_components() {
 
     info "Checking existing DevOps components..."
 
-    declare -A COMPONENTS=(
-        [docker]="Docker"
-        [kubeadm]="Kubernetes kubeadm"
-        [kubectl]="Kubernetes kubectl"
-        [kubelet]="Kubernetes kubelet"
-        [jenkins]="Jenkins"
-        [prometheus]="Prometheus"
-        [grafana-server]="Grafana"
-    )
+    # Docker
+    if command_exists docker; then
+        success "Docker is installed."
+    else
+        info "Docker is not installed."
+    fi
 
-    for COMPONENT in \
-        docker \
-        kubeadm \
-        kubectl \
-        kubelet \
-        jenkins \
-        prometheus \
-        grafana-server
-    do
+    # Kubernetes kubeadm
+    if command_exists kubeadm; then
+        success "Kubernetes kubeadm is installed."
+    else
+        info "Kubernetes kubeadm is not installed."
+    fi
 
-        NAME="${COMPONENTS[$COMPONENT]}"
+    # Kubernetes kubectl
+    if command_exists kubectl; then
+        success "Kubernetes kubectl is installed."
+    else
+        info "Kubernetes kubectl is not installed."
+    fi
 
-        if command_exists "$COMPONENT"; then
+    # Kubernetes kubelet
+    if command_exists kubelet; then
+        success "Kubernetes kubelet is installed."
+    else
+        info "Kubernetes kubelet is not installed."
+    fi
 
-            success "$NAME is installed."
+    # Jenkins
+    if command_exists jenkins || \
+       systemctl list-unit-files 2>/dev/null | grep -q "^jenkins.service"; then
 
-        else
+        success "Jenkins is installed."
 
-            info "$NAME is not installed."
+    else
+        info "Jenkins is not installed."
+    fi
 
-        fi
+    # Prometheus
+    if systemctl list-unit-files 2>/dev/null | \
+        grep -q "^prometheus.service"; then
 
-    done
+        success "Prometheus is installed."
+
+    elif [[ -x "/opt/prometheus/prometheus" ]]; then
+
+        success "Prometheus is installed."
+
+    else
+
+        info "Prometheus is not installed."
+
+    fi
+
+    # Grafana
+    if command_exists grafana-server || \
+       systemctl list-unit-files 2>/dev/null | grep -q "^grafana-server.service"; then
+
+        success "Grafana is installed."
+
+    else
+        info "Grafana is not installed."
+    fi
 }
+
 
 # ==========================================
 # Service Status Check
@@ -345,7 +380,7 @@ check_services() {
 
         NAME="${SERVICES[$SERVICE]}"
 
-        if systemctl list-unit-files 2>/dev/null |
+        if systemctl list-unit-files 2>/dev/null | \
             grep -q "^${SERVICE}.service"; then
 
             if systemctl is-active --quiet "$SERVICE"; then
