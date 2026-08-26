@@ -85,104 +85,212 @@ run_script() {
 
 
 # ==========================================
-# Install Everything
-# ==========================================
-
-# ==========================================
-# Install Everything with Progress
+# Install Everything with Clean Progress UI
 # ==========================================
 
 install_everything() {
 
+    local LOG_FILE="$SCRIPT_DIR/installer.log"
+
+    touch "$LOG_FILE"
+
+    set -o pipefail
+
     (
+        echo "5"
+        echo "XXX"
+        echo "Preparing DevOps installation..."
+        echo "XXX"
+
+        sleep 1
+
+        # ==========================================
+        # Docker
+        # ==========================================
+
         echo "10"
         echo "XXX"
         echo "Installing Docker..."
         echo "XXX"
 
-        bash "$SCRIPT_DIR/Scripts/docker.sh"
+        bash "$SCRIPT_DIR/Scripts/docker.sh" >> "$LOG_FILE" 2>&1
 
-        echo "25"
+        echo "20"
+        echo "XXX"
+        echo "Docker installation completed."
+        echo "XXX"
+
+        sleep 1
+
+        # ==========================================
+        # Kubernetes Components
+        # ==========================================
+
+        echo "30"
         echo "XXX"
         echo "Installing Kubernetes components..."
         echo "XXX"
 
-        bash "$SCRIPT_DIR/Scripts/kubernetes.sh"
+        bash "$SCRIPT_DIR/Scripts/kubernetes.sh" >> "$LOG_FILE" 2>&1
 
         echo "40"
+        echo "XXX"
+        echo "Kubernetes components installed."
+        echo "XXX"
+
+        sleep 1
+
+        # ==========================================
+        # Kubernetes Cluster
+        # ==========================================
+
+        echo "50"
         echo "XXX"
         echo "Setting up Kubernetes cluster..."
         echo "XXX"
 
-        bash "$SCRIPT_DIR/Scripts/kubernetes-cluster.sh"
+        bash "$SCRIPT_DIR/Scripts/kubernetes-cluster.sh" >> "$LOG_FILE" 2>&1
 
         echo "60"
+        echo "XXX"
+        echo "Kubernetes cluster configured."
+        echo "XXX"
+
+        sleep 1
+
+        # ==========================================
+        # Jenkins
+        # ==========================================
+
+        echo "65"
         echo "XXX"
         echo "Installing Jenkins..."
         echo "XXX"
 
-        bash "$SCRIPT_DIR/Scripts/jenkins.sh"
+        bash "$SCRIPT_DIR/Scripts/jenkins.sh" >> "$LOG_FILE" 2>&1
 
         echo "75"
+        echo "XXX"
+        echo "Jenkins installation completed."
+        echo "XXX"
+
+        sleep 1
+
+        # ==========================================
+        # Prometheus
+        # ==========================================
+
+        echo "80"
         echo "XXX"
         echo "Installing Prometheus..."
         echo "XXX"
 
-        bash "$SCRIPT_DIR/Scripts/prometheus.sh"
+        bash "$SCRIPT_DIR/Scripts/prometheus.sh" >> "$LOG_FILE" 2>&1
 
-        echo "90"
+        echo "87"
+        echo "XXX"
+        echo "Prometheus installation completed."
+        echo "XXX"
+
+        sleep 1
+
+        # ==========================================
+        # Grafana
+        # ==========================================
+
+        echo "92"
         echo "XXX"
         echo "Installing Grafana..."
         echo "XXX"
 
-        bash "$SCRIPT_DIR/Scripts/grafana.sh"
+        bash "$SCRIPT_DIR/Scripts/grafana.sh" >> "$LOG_FILE" 2>&1
+
+        echo "96"
+        echo "XXX"
+        echo "Grafana installation completed."
+        echo "XXX"
+
+        sleep 1
+
+        # ==========================================
+        # Verification
+        # ==========================================
+
+        echo "98"
+        echo "XXX"
+        echo "Verifying all DevOps components..."
+        echo "XXX"
+
+        bash "$SCRIPT_DIR/Scripts/verify.sh" >> "$LOG_FILE" 2>&1
 
         echo "100"
         echo "XXX"
-        echo "Verifying complete DevOps installation..."
+        echo "Installation completed successfully!"
         echo "XXX"
 
-        bash "$SCRIPT_DIR/Scripts/verify.sh"
+        sleep 2
 
     ) | whiptail \
         --title "DevOps Installation Progress" \
         --backtitle "DevOps Auto Installer" \
         --gauge "Starting installation..." \
-        10 75 0
+        10 70 0
 
-    INSTALL_STATUS=$?
+    local INSTALL_STATUS=${PIPESTATUS[0]}
+
+    echo
+    set +o pipefail
+
+    # ==========================================
+    # Installation Result
+    # ==========================================
 
     if [[ $INSTALL_STATUS -eq 0 ]]; then
 
         whiptail \
             --title "Installation Complete" \
             --msgbox \
-            "Complete DevOps installation finished.
+"DevOps installation completed successfully!
 
-Docker
-Kubernetes
-Kubernetes Cluster
-Jenkins
-Prometheus
-Grafana
+Installed Components:
 
-Installation verification completed." \
-            18 70
+✓ Docker
+✓ Kubernetes Components
+✓ Kubernetes Cluster
+✓ Jenkins
+✓ Prometheus
+✓ Grafana
 
-        log "Complete DevOps installation completed."
+✓ Installation verification completed.
+
+Detailed output is available in:
+
+$LOG_FILE" \
+            22 75
+
+        log "Complete DevOps installation completed successfully."
 
     else
 
         whiptail \
             --title "Installation Failed" \
             --msgbox \
-            "Installation failed or was interrupted.
+"Installation failed.
+
+The progress window has been closed.
 
 Please check:
-- Installer Logs
-- Verify Installation
-- System Health Check" \
-            14 70
+
+1. Installer Logs
+2. Verify Installation
+3. System Health Check
+
+Log file:
+
+$LOG_FILE" \
+            18 75
+
+        log "Complete DevOps installation failed."
 
     fi
 }
