@@ -88,101 +88,103 @@ run_script() {
 # Install Everything
 # ==========================================
 
+# ==========================================
+# Install Everything with Progress
+# ==========================================
+
 install_everything() {
 
-    clear
+    (
+        echo "10"
+        echo "XXX"
+        echo "Installing Docker..."
+        echo "XXX"
 
-    echo
-    echo "=========================================="
-    echo "       COMPLETE DEVOPS INSTALLATION"
-    echo "=========================================="
-    echo
+        bash "$SCRIPT_DIR/Scripts/docker.sh"
 
-    info "Starting complete DevOps installation..."
+        echo "25"
+        echo "XXX"
+        echo "Installing Kubernetes components..."
+        echo "XXX"
 
-    # ------------------------------------------
-    # Step 1 - Docker
-    # ------------------------------------------
+        bash "$SCRIPT_DIR/Scripts/kubernetes.sh"
 
-    info "Step 1/7: Installing Docker..."
+        echo "40"
+        echo "XXX"
+        echo "Setting up Kubernetes cluster..."
+        echo "XXX"
 
-    bash "$SCRIPT_DIR/Scripts/docker.sh"
+        bash "$SCRIPT_DIR/Scripts/kubernetes-cluster.sh"
 
-    success "Docker installation completed."
+        echo "60"
+        echo "XXX"
+        echo "Installing Jenkins..."
+        echo "XXX"
 
-    # ------------------------------------------
-    # Step 2 - Kubernetes Components
-    # ------------------------------------------
+        bash "$SCRIPT_DIR/Scripts/jenkins.sh"
 
-    info "Step 2/7: Installing Kubernetes components..."
+        echo "75"
+        echo "XXX"
+        echo "Installing Prometheus..."
+        echo "XXX"
 
-    bash "$SCRIPT_DIR/Scripts/kubernetes.sh"
+        bash "$SCRIPT_DIR/Scripts/prometheus.sh"
 
-    success "Kubernetes component installation completed."
+        echo "90"
+        echo "XXX"
+        echo "Installing Grafana..."
+        echo "XXX"
 
-    # ------------------------------------------
-    # Step 3 - Kubernetes Cluster
-    # ------------------------------------------
+        bash "$SCRIPT_DIR/Scripts/grafana.sh"
 
-    info "Step 3/7: Setting up Kubernetes cluster..."
+        echo "100"
+        echo "XXX"
+        echo "Verifying complete DevOps installation..."
+        echo "XXX"
 
-    bash "$SCRIPT_DIR/Scripts/kubernetes-cluster.sh"
+        bash "$SCRIPT_DIR/Scripts/verify.sh"
 
-    success "Kubernetes cluster setup completed."
+    ) | whiptail \
+        --title "DevOps Installation Progress" \
+        --backtitle "DevOps Auto Installer" \
+        --gauge "Starting installation..." \
+        10 75 0
 
-    # ------------------------------------------
-    # Step 4 - Jenkins
-    # ------------------------------------------
+    INSTALL_STATUS=$?
 
-    info "Step 4/7: Installing Jenkins..."
+    if [[ $INSTALL_STATUS -eq 0 ]]; then
 
-    bash "$SCRIPT_DIR/Scripts/jenkins.sh"
+        whiptail \
+            --title "Installation Complete" \
+            --msgbox \
+            "Complete DevOps installation finished.
 
-    success "Jenkins installation completed."
+Docker
+Kubernetes
+Kubernetes Cluster
+Jenkins
+Prometheus
+Grafana
 
-    # ------------------------------------------
-    # Step 5 - Prometheus
-    # ------------------------------------------
+Installation verification completed." \
+            18 70
 
-    info "Step 5/7: Installing Prometheus..."
+        log "Complete DevOps installation completed."
 
-    bash "$SCRIPT_DIR/Scripts/prometheus.sh"
+    else
 
-    success "Prometheus installation completed."
+        whiptail \
+            --title "Installation Failed" \
+            --msgbox \
+            "Installation failed or was interrupted.
 
-    # ------------------------------------------
-    # Step 6 - Grafana
-    # ------------------------------------------
+Please check:
+- Installer Logs
+- Verify Installation
+- System Health Check" \
+            14 70
 
-    info "Step 6/7: Installing Grafana..."
-
-    bash "$SCRIPT_DIR/Scripts/grafana.sh"
-
-    success "Grafana installation completed."
-
-    # ------------------------------------------
-    # Step 7 - Verification
-    # ------------------------------------------
-
-    info "Step 7/7: Verifying complete installation..."
-
-    bash "$SCRIPT_DIR/Scripts/verify.sh"
-
-    # ------------------------------------------
-    # Complete
-    # ------------------------------------------
-
-    echo
-
-    success "=========================================="
-    success "COMPLETE DEVOPS INSTALLATION FINISHED"
-    success "=========================================="
-
-    echo
-
-    log "Complete DevOps installation completed."
-
-    pause
+    fi
 }
 
 
