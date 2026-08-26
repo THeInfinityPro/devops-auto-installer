@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-# DevOps Auto Installer - Health Verification
+# DevOps Auto Installer - Installation Verify
 # ==========================================
 
 set -u
@@ -13,6 +13,15 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "$SCRIPT_DIR/common.sh"
+
+# ==========================================
+# Default Ports
+# ==========================================
+
+JENKINS_PORT="${JENKINS_PORT:-8080}"
+PROMETHEUS_PORT="${PROMETHEUS_PORT:-9090}"
+GRAFANA_PORT="${GRAFANA_PORT:-3000}"
+KUBERNETES_API_PORT="${KUBERNETES_API_PORT:-6443}"
 
 # ==========================================
 # Counters
@@ -28,7 +37,7 @@ WARN_COUNT=0
 
 check_pass() {
 
-    echo -e "${GREEN}[PASS]${NC} $1"
+    echo -e "${GREEN:-}[PASS]${NC:-} $1"
     log "[PASS] $1"
 
     ((PASS_COUNT+=1))
@@ -36,7 +45,7 @@ check_pass() {
 
 check_fail() {
 
-    echo -e "${RED}[FAIL]${NC} $1"
+    echo -e "${RED:-}[FAIL]${NC:-} $1"
     log "[FAIL] $1"
 
     ((FAIL_COUNT+=1))
@@ -44,10 +53,72 @@ check_fail() {
 
 check_warning() {
 
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    echo -e "${YELLOW:-}[WARNING]${NC:-} $1"
     log "[WARNING] $1"
 
     ((WARN_COUNT+=1))
+}
+
+# ==========================================
+# Check Port
+# ==========================================
+
+check_port() {
+
+    local PORT="$1"
+    local SERVICE="$2"
+
+    if ss -ltn 2>/dev/null | grep -qE ":${PORT}[[:space:]]"; then
+
+        check_pass "$SERVICE port $PORT is listening locally."
+        return 0
+
+    else
+
+        check_warning "$SERVICE port $PORT is not listening locally."
+        return 1
+
+    fi
+}
+
+# ==========================================
+# Check Service
+# ==========================================
+
+check_service_status() {
+
+    local SERVICE="$1"
+    local DISPLAY_NAME="$2"
+
+    if ! systemctl list-unit-files 2>/dev/null |
+        grep -q "^${SERVICE}\.service"; then
+
+        check_warning "$DISPLAY_NAME service is not installed."
+        return 1
+
+    fi
+
+    if systemctl is-enabled --quiet "$SERVICE" 2>/dev/null; then
+
+        check_pass "$DISPLAY_NAME service is enabled."
+
+    else
+
+        check_warning "$DISPLAY_NAME service is not enabled."
+
+    fi
+
+    if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
+
+        check_pass "$DISPLAY_NAME service is running."
+        return 0
+
+    else
+
+        check_fail "$DISPLAY_NAME service is not running."
+        return 1
+
+    fi
 }
 
 # ==========================================
@@ -60,7 +131,7 @@ show_verification_header() {
 
     echo
     echo "=========================================="
-    echo "       DEVOPS HEALTH CHECK"
+    echo "       DEVOPS INSTALLATION VERIFY"
     echo "=========================================="
     echo
 }
@@ -95,15 +166,7 @@ verify_docker() {
     # Docker Service
     # ------------------------------------------
 
-    if systemctl is-active --quiet docker; then
-
-        check_pass "Docker service is running."
-
-    else
-
-        check_fail "Docker service is not running."
-
-    fi
+    check_service_status "docker" "Docker" || true
 
     # ------------------------------------------
     # Docker Engine
@@ -150,6 +213,25 @@ verify_docker() {
         check_warning "Containerd command not found."
 
     fi
+
+    # ------------------------------------------
+    # Containerd Service
+    # ------------------------------------------
+
+    if systemctl list-unit-files 2>/dev/null |
+        grep -q "^containerd.service"; then
+
+        if systemctl is-active --quiet containerd; then
+
+            check_pass "Containerd service is running."
+
+        else
+
+            check_warning "Containerd service is not running."
+
+        fi
+
+    fi
 }
 
 # ==========================================
@@ -161,11 +243,15 @@ verify_kubernetes_components() {
     echo
     info "Checking Kubernetes components..."
 
+    local COMPONENTS_FOUND=0
+
     # ------------------------------------------
     # kubeadm
     # ------------------------------------------
 
     if command_exists kubeadm; then
+
+        COMPONENTS_FOUND=1
 
         KUBEADM_VERSION="$(kubeadm version -o short 2>/dev/null || true)"
 
@@ -173,7 +259,7 @@ verify_kubernetes_components() {
 
     else
 
-        check_fail "kubeadm is not installed."
+        check_warning "kubeadm is not installed."
 
     fi
 
@@ -183,13 +269,15 @@ verify_kubernetes_components() {
 
     if command_exists kubelet; then
 
+        COMPONENTS_FOUND=1
+
         KUBELET_VERSION="$(kubelet --version 2>/dev/null || true)"
 
         check_pass "kubelet installed: $KUBELET_VERSION"
 
     else
 
-        check_fail "kubelet is not installed."
+        check_warning "kubelet is not installed."
 
     fi
 
@@ -199,28 +287,31 @@ verify_kubernetes_components() {
 
     if command_exists kubectl; then
 
+        COMPONENTS_FOUND=1
+
         KUBECTL_VERSION="$(
-            kubectl version \
-                --client \
-                --output=yaml 2>/dev/null |
-                grep "gitVersion" |
-                head -1 ||
-                true
+            kubectl version --client --short 2>/dev/null ||
+            kubectl version --client 2>/dev/null |
+            head -1 ||
+            true
         )"
 
-        if [[ -n "$KUBECTL_VERSION" ]]; then
-
-            check_pass "kubectl installed: $KUBECTL_VERSION"
-
-        else
-
-            check_pass "kubectl installed."
-
-        fi
+        check_pass "kubectl installed: $KUBECTL_VERSION"
 
     else
 
-        check_fail "kubectl is not installed."
+        check_warning "kubectl is not installed."
+
+    fi
+
+    # ------------------------------------------
+    # No Kubernetes Components
+    # ------------------------------------------
+
+    if [[ "$COMPONENTS_FOUND" -eq 0 ]]; then
+
+        check_warning "Kubernetes components are not installed."
+        return
 
     fi
 
@@ -228,21 +319,32 @@ verify_kubernetes_components() {
     # Kubelet Service
     # ------------------------------------------
 
-    if systemctl is-enabled --quiet kubelet 2>/dev/null; then
+    if systemctl list-unit-files 2>/dev/null |
+        grep -q "^kubelet.service"; then
 
-        if systemctl is-active --quiet kubelet; then
+        if systemctl is-enabled --quiet kubelet 2>/dev/null; then
+
+            check_pass "Kubelet service is enabled."
+
+        else
+
+            check_warning "Kubelet service is not enabled."
+
+        fi
+
+        if systemctl is-active --quiet kubelet 2>/dev/null; then
 
             check_pass "Kubelet service is running."
 
         else
 
-            check_warning "Kubelet is enabled but not currently running."
+            check_warning "Kubelet service is not running."
 
         fi
 
     else
 
-        check_warning "Kubelet service is not enabled."
+        check_warning "Kubelet service is not installed."
 
     fi
 }
@@ -257,24 +359,18 @@ verify_kubernetes_cluster() {
     info "Checking Kubernetes cluster..."
 
     # ------------------------------------------
-    # Check kubeconfig
+    # kubectl Required
     # ------------------------------------------
 
-    if [[ ! -f "/etc/kubernetes/admin.conf" ]]; then
+    if ! command_exists kubectl; then
 
-        if [[ -z "${KUBECONFIG:-}" ]]; then
-
-            check_warning \
-                "Kubernetes cluster is not initialized or admin.conf is missing."
-
-            return
-
-        fi
+        check_warning "kubectl is not installed. Skipping cluster verification."
+        return
 
     fi
 
     # ------------------------------------------
-    # Configure temporary kubeconfig
+    # Locate kubeconfig
     # ------------------------------------------
 
     local KUBE_CONFIG=""
@@ -294,10 +390,20 @@ verify_kubernetes_cluster() {
 
     else
 
-        check_warning "No Kubernetes kubeconfig was found."
+        check_warning "Kubernetes cluster is not initialized or kubeconfig was not found."
         return
 
     fi
+
+    check_pass "Kubernetes kubeconfig found: $KUBE_CONFIG"
+
+    # ------------------------------------------
+    # Kubernetes API Port
+    # ------------------------------------------
+
+    check_port \
+        "$KUBERNETES_API_PORT" \
+        "Kubernetes API"
 
     # ------------------------------------------
     # API Server
@@ -320,7 +426,7 @@ verify_kubernetes_cluster() {
     # Current Context
     # ------------------------------------------
 
-    local CURRENT_CONTEXT
+    local CURRENT_CONTEXT=""
 
     CURRENT_CONTEXT="$(
         kubectl \
@@ -340,10 +446,10 @@ verify_kubernetes_cluster() {
     fi
 
     # ------------------------------------------
-    # Node Status
+    # Nodes
     # ------------------------------------------
 
-    local NODE_STATUS
+    local NODE_STATUS=""
 
     NODE_STATUS="$(
         kubectl \
@@ -360,21 +466,22 @@ verify_kubernetes_cluster() {
 
     fi
 
-    if echo "$NODE_STATUS" |
-        awk '{print $2}' |
-        grep -q "^Ready$"; then
+    local READY_NODES
 
-        check_pass "Kubernetes node is Ready."
+    READY_NODES="$(
+        echo "$NODE_STATUS" |
+        awk '$2 == "Ready" {count++} END {print count+0}'
+    )"
+
+    if [[ "$READY_NODES" -gt 0 ]]; then
+
+        check_pass "Kubernetes Ready nodes: $READY_NODES"
 
     else
 
-        check_warning "Kubernetes node exists but is not Ready."
+        check_warning "No Kubernetes nodes are Ready."
 
     fi
-
-    # ------------------------------------------
-    # Display Nodes
-    # ------------------------------------------
 
     echo
     info "Kubernetes nodes:"
@@ -385,7 +492,7 @@ verify_kubernetes_cluster() {
         true
 
     # ------------------------------------------
-    # System Pods
+    # Pods
     # ------------------------------------------
 
     local POD_COUNT
@@ -401,7 +508,7 @@ verify_kubernetes_cluster() {
 
     if [[ "$POD_COUNT" -gt 0 ]]; then
 
-        check_pass "Kubernetes system pods detected: $POD_COUNT"
+        check_pass "Kubernetes pods detected: $POD_COUNT"
 
     else
 
@@ -419,7 +526,7 @@ verify_kubernetes_cluster() {
 
     if [[ -z "$NOT_RUNNING_PODS" ]]; then
 
-        check_pass "Kubernetes system pods are healthy."
+        check_pass "Kubernetes pods are healthy."
 
     else
 
@@ -439,6 +546,18 @@ verify_jenkins() {
     info "Checking Jenkins..."
 
     # ------------------------------------------
+    # Jenkins Service
+    # ------------------------------------------
+
+    if ! systemctl list-unit-files 2>/dev/null |
+        grep -q "^jenkins.service"; then
+
+        check_warning "Jenkins is not installed."
+        return
+
+    fi
+
+    # ------------------------------------------
     # Java
     # ------------------------------------------
 
@@ -455,36 +574,26 @@ verify_jenkins() {
     fi
 
     # ------------------------------------------
-    # Jenkins Service
+    # Service
     # ------------------------------------------
 
-    if systemctl list-unit-files 2>/dev/null |
-        grep -q "^jenkins.service"; then
-
-        if systemctl is-active --quiet jenkins; then
-
-            check_pass "Jenkins service is running."
-
-        else
-
-            check_fail "Jenkins service is installed but not running."
-
-        fi
-
-    else
-
-        check_fail "Jenkins service is not installed."
-        return
-
-    fi
+    check_service_status "jenkins" "Jenkins" || true
 
     # ------------------------------------------
-    # Jenkins HTTP
+    # Port
+    # ------------------------------------------
+
+    check_port \
+        "$JENKINS_PORT" \
+        "Jenkins"
+
+    # ------------------------------------------
+    # HTTP
     # ------------------------------------------
 
     if curl -fsS \
         --max-time 5 \
-        http://127.0.0.1:${JENKINS_PORT}/login \
+        "http://127.0.0.1:${JENKINS_PORT}/login" \
         >/dev/null 2>&1; then
 
         check_pass "Jenkins HTTP endpoint is responding."
@@ -521,7 +630,7 @@ verify_prometheus() {
 
     else
 
-        check_fail "Prometheus binary is not installed."
+        check_warning "Prometheus is not installed."
         return
 
     fi
@@ -530,43 +639,40 @@ verify_prometheus() {
     # Service
     # ------------------------------------------
 
-    if systemctl is-active --quiet prometheus 2>/dev/null; then
-
-        check_pass "Prometheus service is running."
-
-    else
-
-        check_fail "Prometheus service is not running."
-        return
-
-    fi
+    check_service_status "prometheus" "Prometheus" || true
 
     # ------------------------------------------
-    # HTTP Endpoint
+    # Port
     # ------------------------------------------
 
-    info "Checking Prometheus HTTP endpoint..."
+    check_port \
+        "$PROMETHEUS_PORT" \
+        "Prometheus"
+
+    # ------------------------------------------
+    # Ready Endpoint
+    # ------------------------------------------
 
     if curl -fsS \
         --max-time 5 \
-        http://127.0.0.1:${PROMETHEUS_PORT}/-/ready \
+        "http://127.0.0.1:${PROMETHEUS_PORT}/-/ready" \
         >/dev/null 2>&1; then
 
-        check_pass "Prometheus HTTP endpoint is responding."
+        check_pass "Prometheus readiness endpoint is responding."
 
     else
 
-        check_warning "Prometheus HTTP endpoint is not responding."
+        check_warning "Prometheus readiness endpoint is not responding."
 
     fi
 
     # ------------------------------------------
-    # API Health
+    # API
     # ------------------------------------------
 
     if curl -fsS \
         --max-time 5 \
-        http://127.0.0.1:${PROMETHEUS_PORT}/api/v1/status/buildinfo \
+        "http://127.0.0.1:${PROMETHEUS_PORT}/api/v1/status/buildinfo" \
         >/dev/null 2>&1; then
 
         check_pass "Prometheus API is healthy."
@@ -594,14 +700,15 @@ verify_grafana() {
     if command_exists grafana-server; then
 
         GRAFANA_VERSION="$(
-            grafana-server -v 2>/dev/null
+            grafana-server -v 2>/dev/null ||
+            true
         )"
 
         check_pass "Grafana installed: $GRAFANA_VERSION"
 
     else
 
-        check_fail "Grafana is not installed."
+        check_warning "Grafana is not installed."
         return
 
     fi
@@ -610,58 +717,54 @@ verify_grafana() {
     # Service
     # ------------------------------------------
 
-    if systemctl is-active --quiet grafana-server 2>/dev/null; then
-
-        check_pass "Grafana service is running."
-
-    else
-
-        check_fail "Grafana service is not running."
-        return
-
-    fi
+    check_service_status \
+        "grafana-server" \
+        "Grafana" || true
 
     # ------------------------------------------
-    # HTTP Endpoint
+    # Port
     # ------------------------------------------
 
-    info "Checking Grafana HTTP endpoint..."
-
-    if curl -fsS \
-        --max-time 5 \
-        http://127.0.0.1:${GRAFANA_PORT}/api/health \
-        >/dev/null 2>&1; then
-
-        check_pass "Grafana HTTP endpoint is responding."
-
-    else
-
-        check_warning "Grafana HTTP endpoint is not responding."
-
-    fi
+    check_port \
+        "$GRAFANA_PORT" \
+        "Grafana"
 
     # ------------------------------------------
-    # Grafana API Health
+    # Health API
     # ------------------------------------------
 
-    local GRAFANA_HEALTH
+    local GRAFANA_HEALTH=""
 
     GRAFANA_HEALTH="$(
         curl -fsS \
             --max-time 5 \
-            http://127.0.0.1:${GRAFANA_PORT}/api/health \
+            "http://127.0.0.1:${GRAFANA_PORT}/api/health" \
             2>/dev/null ||
             true
     )"
 
+    if [[ -z "$GRAFANA_HEALTH" ]]; then
+
+        check_warning "Grafana HTTP endpoint is not responding."
+        return
+
+    fi
+
+    check_pass "Grafana HTTP endpoint is responding."
+
+    # ------------------------------------------
+    # Database Health
+    # ------------------------------------------
+
     if echo "$GRAFANA_HEALTH" |
-        grep -q '"database": "ok"'; then
+        grep -q '"database"[[:space:]]*:[[:space:]]*"ok"'; then
 
         check_pass "Grafana database health is OK."
 
-    elif [[ -n "$GRAFANA_HEALTH" ]]; then
+    else
 
-        check_warning "Grafana responded but database health could not be confirmed."
+        check_warning \
+            "Grafana responded but database health could not be confirmed."
 
     fi
 }
@@ -674,24 +777,24 @@ show_summary() {
 
     echo
     echo "=========================================="
-    echo "          HEALTH CHECK SUMMARY"
+    echo "        INSTALLATION SUMMARY"
     echo "=========================================="
     echo
 
-    echo -e "${GREEN}PASS : $PASS_COUNT${NC}"
-    echo -e "${YELLOW}WARN : $WARN_COUNT${NC}"
-    echo -e "${RED}FAIL : $FAIL_COUNT${NC}"
+    echo -e "${GREEN:-}PASS    : $PASS_COUNT${NC:-}"
+    echo -e "${YELLOW:-}WARNING : $WARN_COUNT${NC:-}"
+    echo -e "${RED:-}FAIL    : $FAIL_COUNT${NC:-}"
 
     echo
     echo "=========================================="
 
     if [[ "$FAIL_COUNT" -eq 0 ]]; then
 
-        success "Health verification completed successfully."
+        success "Installation verification completed successfully."
 
     else
 
-        error "Health verification completed with failures."
+        error "Installation verification completed with failures."
 
     fi
 
@@ -723,7 +826,7 @@ main() {
 
     show_summary
 
-    log "DevOps health verification completed."
+    log "DevOps installation verification completed."
 }
 
 # ==========================================
