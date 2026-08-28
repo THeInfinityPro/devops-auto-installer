@@ -2,17 +2,28 @@
 
 # ==========================================
 # DevOps Auto Installer - Uninstall
-# Whiptail UI Version
+# Interactive Whiptail UI
 # ==========================================
 
 set -e
 
+# ==========================================
+# Script Directory
+# ==========================================
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 source "$SCRIPT_DIR/common.sh"
 
-LOG_FILE="$(cd "$SCRIPT_DIR/.." && pwd)/installer.log"
+# ==========================================
+# Log Configuration
+# ==========================================
 
+LOG_DIR="$PROJECT_DIR/Logs"
+LOG_FILE="$LOG_DIR/installer.log"
+
+mkdir -p "$LOG_DIR"
 touch "$LOG_FILE"
 
 
@@ -23,9 +34,30 @@ touch "$LOG_FILE"
 ui_info() {
 
     whiptail \
-        --title "DevOps Uninstaller" \
+        --title "DevOps Auto Installer" \
+        --backtitle "DevOps Component Uninstaller" \
         --infobox "$1" \
         8 70
+}
+
+
+ui_success() {
+
+    whiptail \
+        --title "✓ Operation Complete" \
+        --backtitle "DevOps Component Uninstaller" \
+        --msgbox "$1" \
+        12 75
+}
+
+
+ui_error() {
+
+    whiptail \
+        --title "⚠ Operation Issue" \
+        --backtitle "DevOps Component Uninstaller" \
+        --msgbox "$1" \
+        12 75
 }
 
 
@@ -33,10 +65,16 @@ confirm_action() {
 
     whiptail \
         --title "Confirm Removal" \
+        --backtitle "DevOps Component Uninstaller" \
         --yesno "$1
 
-Continue?" \
-        12 70
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This action may permanently delete
+configuration and stored data.
+
+Do you want to continue?" \
+        16 75
 }
 
 
@@ -348,38 +386,51 @@ remove_component() {
     local core_function="$3"
 
     if ! confirm_action "$message"; then
-
         return
-
     fi
 
-    ui_info "Removing $name...
+    (
+        echo "10"
+        echo "XXX"
+        echo "Preparing to remove $name..."
+        echo "XXX"
 
-Please wait..."
+        sleep 1
 
-    if run_logged "$core_function"; then
+        echo "40"
+        echo "XXX"
+        echo "Removing $name..."
+        echo "XXX"
 
-        whiptail \
-            --title "Removal Complete" \
-            --msgbox "$name removal completed successfully.
+        run_logged "$core_function"
 
-Details were written to:
+        echo "85"
+        echo "XXX"
+        echo "Finalizing cleanup..."
+        echo "XXX"
 
-$LOG_FILE" \
-            12 70
+        sleep 1
 
-    else
+        echo "100"
+        echo "XXX"
+        echo "$name removal completed."
+        echo "XXX"
 
-        whiptail \
-            --title "Removal Failed" \
-            --msgbox "$name removal encountered an error.
+    ) | whiptail \
+        --title "Removing $name" \
+        --backtitle "DevOps Auto Installer" \
+        --gauge "Starting..." \
+        10 75 0
 
-Please check:
+    ui_success "$name removal process completed.
 
-$LOG_FILE" \
-            12 70
+You can verify the removal from:
 
-    fi
+  Verify Removal
+
+Detailed output is available in:
+
+  $LOG_FILE"
 }
 
 
@@ -391,7 +442,13 @@ remove_docker() {
 
     remove_component \
         "Docker" \
-        "This will remove Docker, containers, images and Docker data." \
+        "This will remove:
+
+• Docker Engine
+• Containers
+• Images
+• Docker data
+• Container runtime" \
         remove_docker_core
 }
 
@@ -402,12 +459,53 @@ remove_docker() {
 
 remove_kubernetes() {
 
-    remove_component \
-        "Kubernetes" \
-        "This will remove the Kubernetes cluster, components, CNI configuration and Kubernetes data." \
-        remove_kubernetes_core
+    if ! confirm_action \
+        "This will remove:
 
-    wait_for_kubernetes_cleanup
+• Kubernetes Cluster
+• kubeadm
+• kubelet
+• kubectl
+• CNI configuration
+• Kubernetes data"; then
+
+        return
+    fi
+
+    (
+        echo "10"
+        echo "XXX"
+        echo "Stopping Kubernetes services..."
+        echo "XXX"
+
+        echo "35"
+        echo "XXX"
+        echo "Removing Kubernetes components..."
+        echo "XXX"
+
+        run_logged remove_kubernetes_core
+
+        echo "65"
+        echo "XXX"
+        echo "Waiting for cleanup..."
+        echo "XXX"
+
+        wait_for_kubernetes_cleanup
+
+        echo "100"
+        echo "XXX"
+        echo "Kubernetes removal completed."
+        echo "XXX"
+
+    ) | whiptail \
+        --title "Removing Kubernetes" \
+        --backtitle "DevOps Auto Installer" \
+        --gauge "Starting..." \
+        10 75 0
+
+    ui_success "Kubernetes removal process completed.
+
+You can run Verify Removal to check for remaining files or packages."
 }
 
 
@@ -419,7 +517,12 @@ remove_jenkins() {
 
     remove_component \
         "Jenkins" \
-        "This will remove Jenkins and its configuration and data." \
+        "This will remove:
+
+• Jenkins service
+• Jenkins jobs
+• Jenkins configuration
+• Jenkins stored data" \
         remove_jenkins_core
 }
 
@@ -432,7 +535,12 @@ remove_prometheus() {
 
     remove_component \
         "Prometheus" \
-        "This will remove Prometheus and its stored monitoring data." \
+        "This will remove:
+
+• Prometheus service
+• Monitoring configuration
+• Prometheus database
+• Stored metrics" \
         remove_prometheus_core
 }
 
@@ -445,7 +553,12 @@ remove_grafana() {
 
     remove_component \
         "Grafana" \
-        "This will remove Grafana and its configuration and data." \
+        "This will remove:
+
+• Grafana service
+• Dashboards
+• Configuration
+• Grafana database" \
         remove_grafana_core
 }
 
@@ -463,19 +576,16 @@ verify_uninstall() {
     {
 
         echo "DEVOPS REMOVAL VERIFICATION"
-
         echo "=========================================="
-
         echo
 
         local failures=0
 
-        # Docker
+        echo "[ Docker ]"
 
         if command -v docker >/dev/null 2>&1 || [[ -d "/var/lib/docker" ]]; then
 
             echo "[WARNING] Docker components still exist."
-
             failures=$((failures + 1))
 
         else
@@ -484,8 +594,8 @@ verify_uninstall() {
 
         fi
 
-
-        # Kubernetes
+        echo
+        echo "[ Kubernetes ]"
 
         local kubernetes_found=false
 
@@ -496,7 +606,6 @@ verify_uninstall() {
             if command -v "$cmd" >/dev/null 2>&1; then
 
                 echo "[WARNING] Kubernetes command still found: $cmd"
-
                 kubernetes_found=true
 
             fi
@@ -509,7 +618,6 @@ verify_uninstall() {
             grep -qE '^ii[[:space:]]+(kubeadm|kubelet|kubectl|kubernetes-cni|cri-tools)(:|[[:space:]])'; then
 
             echo "[WARNING] Kubernetes packages are still installed."
-
             kubernetes_found=true
 
         fi
@@ -527,7 +635,6 @@ verify_uninstall() {
             if [[ -e "$dir" ]]; then
 
                 echo "[WARNING] Kubernetes leftover found: $dir"
-
                 kubernetes_found=true
 
             fi
@@ -541,19 +648,17 @@ verify_uninstall() {
         else
 
             echo "[WARNING] Kubernetes components or configuration still exist."
-
             failures=$((failures + 1))
 
         fi
 
-
-        # Jenkins
+        echo
+        echo "[ Jenkins ]"
 
         if command -v jenkins >/dev/null 2>&1 || \
            systemctl list-unit-files 2>/dev/null | grep -q "^jenkins.service"; then
 
             echo "[WARNING] Jenkins is still installed."
-
             failures=$((failures + 1))
 
         else
@@ -562,15 +667,14 @@ verify_uninstall() {
 
         fi
 
-
-        # Prometheus
+        echo
+        echo "[ Prometheus ]"
 
         if [[ -e "/opt/prometheus/prometheus" ]] || \
            [[ -d "/etc/prometheus" ]] || \
            systemctl list-unit-files 2>/dev/null | grep -q "^prometheus.service"; then
 
             echo "[WARNING] Prometheus is still installed."
-
             failures=$((failures + 1))
 
         else
@@ -579,14 +683,13 @@ verify_uninstall() {
 
         fi
 
-
-        # Grafana
+        echo
+        echo "[ Grafana ]"
 
         if command -v grafana-server >/dev/null 2>&1 || \
            [[ -d "/etc/grafana" ]]; then
 
             echo "[WARNING] Grafana is still installed."
-
             failures=$((failures + 1))
 
         else
@@ -596,14 +699,15 @@ verify_uninstall() {
         fi
 
         echo
+        echo "=========================================="
 
         if [[ "$failures" -eq 0 ]]; then
 
-            echo "[SUCCESS] All DevOps components have been removed."
+            echo "[SUCCESS] ALL DEVOPS COMPONENTS REMOVED."
 
         else
 
-            echo "[WARNING] Some components were not completely removed."
+            echo "[WARNING] SOME COMPONENTS STILL EXIST."
 
         fi
 
@@ -612,9 +716,10 @@ verify_uninstall() {
     cat "$result_file" >> "$LOG_FILE"
 
     whiptail \
-        --title "Verify Removal" \
+        --title "Removal Verification" \
+        --backtitle "DevOps Auto Installer" \
         --textbox "$result_file" \
-        24 90
+        28 95
 
     rm -f "$result_file"
 }
@@ -626,9 +731,12 @@ verify_uninstall() {
 
 remove_everything() {
 
-    whiptail \
-        --title "WARNING - Remove Everything" \
-        --yesno "This will permanently remove:
+    if ! whiptail \
+        --title "⚠ Remove Everything" \
+        --backtitle "DevOps Auto Installer" \
+        --yesno "WARNING!
+
+This will permanently remove:
 
 • Docker
 • Kubernetes
@@ -636,24 +744,23 @@ remove_everything() {
 • Prometheus
 • Grafana
 
-All related configuration and local data may be deleted.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Continue?" \
-        20 70
+All related configuration and local data
+may be permanently deleted.
 
-    if [[ $? -ne 0 ]]; then
+Do you want to continue?" \
+        22 75; then
 
         return
 
     fi
 
     (
-
         echo "5"
         echo "XXX"
         echo "Preparing complete removal..."
         echo "XXX"
-
 
         echo "15"
         echo "XXX"
@@ -662,14 +769,12 @@ Continue?" \
 
         run_logged remove_grafana_core
 
-
         echo "30"
         echo "XXX"
         echo "Removing Prometheus..."
         echo "XXX"
 
         run_logged remove_prometheus_core
-
 
         echo "45"
         echo "XXX"
@@ -678,14 +783,12 @@ Continue?" \
 
         run_logged remove_jenkins_core
 
-
         echo "60"
         echo "XXX"
         echo "Removing Kubernetes..."
         echo "XXX"
 
         run_logged remove_kubernetes_core
-
 
         echo "75"
         echo "XXX"
@@ -694,7 +797,6 @@ Continue?" \
 
         wait_for_kubernetes_cleanup
 
-
         echo "88"
         echo "XXX"
         echo "Removing Docker..."
@@ -702,18 +804,14 @@ Continue?" \
 
         run_logged remove_docker_core
 
-
         echo "96"
         echo "XXX"
-        echo "Running final package cleanup..."
+        echo "Running final cleanup..."
         echo "XXX"
 
         apt-get autoremove -y >> "$LOG_FILE" 2>&1 || true
-
         apt-get autoclean -y >> "$LOG_FILE" 2>&1 || true
-
         apt-get update >> "$LOG_FILE" 2>&1 || true
-
 
         echo "100"
         echo "XXX"
@@ -723,21 +821,21 @@ Continue?" \
         sleep 1
 
     ) | whiptail \
-        --title "DevOps Removal Progress" \
+        --title "Complete DevOps Removal" \
         --backtitle "DevOps Auto Installer" \
-        --gauge "Starting removal..." \
+        --gauge "Starting complete removal..." \
         10 75 0
-
 
     verify_uninstall
 
+    ui_success "Complete DevOps removal finished.
 
-    whiptail \
-        --title "Complete Removal" \
-        --msgbox "Complete DevOps removal process finished.
+Please review:
 
-Review Verify Removal and Installer Logs for details." \
-        10 70
+• Removal Verification
+• Installer Log
+
+for final details."
 }
 
 
@@ -755,8 +853,9 @@ view_logs() {
 
     whiptail \
         --title "Installer Log" \
+        --backtitle "DevOps Auto Installer" \
         --textbox "$LOG_FILE" \
-        28 100
+        30 110
 }
 
 
@@ -771,27 +870,24 @@ main() {
     while true; do
 
         choice=$(whiptail \
-            --title "DevOps Uninstaller" \
+            --title "DevOps Component Uninstaller" \
             --backtitle "DevOps Auto Installer" \
-            --menu "Choose an action:" \
-            22 78 12 \
-            "1" "Remove Docker" \
+            --menu "Select a component or action:" \
+            25 78 14 \
+            "1" "Remove Docker & Containerd" \
             "2" "Remove Kubernetes" \
             "3" "Remove Jenkins" \
             "4" "Remove Prometheus" \
             "5" "Remove Grafana" \
             "6" "Remove Everything" \
-            "7" "Verify Removal" \
+            "7" "Verify Removal Status" \
             "8" "View Installer Log" \
-            "0" "Back" \
+            "0" "Return to Main Installer" \
             3>&1 1>&2 2>&3)
 
         if [[ $? -ne 0 ]]; then
-
             break
-
         fi
-
 
         case "$choice" in
 

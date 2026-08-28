@@ -2,75 +2,132 @@
 
 # ==========================================
 # DevOps Auto Installer
-# Main Installer
+# Main Control Panel
 # ==========================================
 
-set -e
+set -u
+
+# ==========================================
+# Script Directory
+# ==========================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_DIR="$SCRIPT_DIR/Scripts"
 
 # ==========================================
 # Load Common Functions
 # ==========================================
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-source "$SCRIPT_DIR/Scripts/common.sh"
-
+source "$SCRIPTS_DIR/common.sh"
 
 # ==========================================
-# Installer Header
+# Check Whiptail
 # ==========================================
 
-show_header() {
+check_whiptail() {
+
+    if ! command -v whiptail >/dev/null 2>&1; then
+
+        echo "Whiptail is required but not installed."
+        echo
+
+        read -rp "Install Whiptail now? (Y/n): " choice
+
+        choice="${choice:-Y}"
+
+        if [[ "$choice" =~ ^[Yy]$ ]]; then
+
+            sudo apt-get update
+            sudo apt-get install -y whiptail
+
+        else
+
+            echo "Whiptail is required to run this installer."
+            exit 1
+
+        fi
+
+    fi
+}
+
+# ==========================================
+# Run Script
+# ==========================================
+
+run_script() {
+
+    local SCRIPT_NAME="$1"
+    local SCRIPT_PATH="$SCRIPTS_DIR/$SCRIPT_NAME"
+
+    if [[ ! -f "$SCRIPT_PATH" ]]; then
+
+        whiptail \
+            --title "File Not Found" \
+            --msgbox \
+            "The following script was not found:
+
+$SCRIPT_PATH" \
+            10 70
+
+        return 1
+
+    fi
 
     clear
 
     echo
     echo "=========================================="
-    echo "        DEVOPS AUTO INSTALLER"
+    echo "      DEVOPS AUTO INSTALLER"
     echo "=========================================="
     echo
+
+    info "Running: $SCRIPT_NAME"
+
+    echo
+
+    bash "$SCRIPT_PATH"
+
+    local EXIT_CODE=$?
+
+    echo
+
+    if [[ "$EXIT_CODE" -eq 0 ]]; then
+
+        success "$SCRIPT_NAME completed successfully."
+
+    else
+
+        error "$SCRIPT_NAME finished with errors."
+        log "[ERROR] $SCRIPT_NAME exited with code $EXIT_CODE"
+
+    fi
+
+    echo
+    read -rp "Press Enter to return to the main menu..."
 }
 
-
 # ==========================================
-# Pause
+# Confirm Script
 # ==========================================
 
-pause() {
+confirm_and_run() {
 
-    echo
-    read -rp "Press Enter to continue..."
+    local TITLE="$1"
+    local MESSAGE="$2"
+    local SCRIPT_NAME="$3"
+
+    if whiptail \
+        --title "$TITLE" \
+        --yesno \
+        "$MESSAGE
+
+Do you want to continue?" \
+        15 70; then
+
+        run_script "$SCRIPT_NAME"
+
+    fi
 }
-
-
-# ==========================================
-# Menu
-# ==========================================
-
-show_menu() {
-
-    echo "  INSTALLATION"
-    echo "------------------------------------------"
-    echo "1. Install Docker"
-    echo "2. Install Kubernetes"
-    echo "3. Setup Kubernetes Cluster"
-    echo "4. Install Jenkins"
-    echo "5. Install Prometheus"
-    echo "6. Install Grafana"
-    echo
-
-    echo "  MANAGEMENT"
-    echo "------------------------------------------"
-    echo "7. Install Everything"
-    echo "8. Verify Installation"
-    echo "9. Health Check"
-    echo "10. Uninstall"
-    echo
-
-    echo "0. Exit"
-    echo
-}
-
 
 # ==========================================
 # Install Everything
@@ -78,258 +135,359 @@ show_menu() {
 
 install_everything() {
 
+    if ! whiptail \
+        --title "Install Everything" \
+        --yesno \
+        "This will install and configure:
+
+• Docker
+• Kubernetes Components
+• Kubernetes Cluster
+• Jenkins
+• Prometheus
+• Grafana
+
+The process may take several minutes.
+
+Do you want to continue?" \
+        20 70; then
+
+        return
+
+    fi
+
+    clear
+
     echo
     echo "=========================================="
     echo "       COMPLETE DEVOPS INSTALLATION"
     echo "=========================================="
     echo
 
-    info "Starting complete DevOps installation..."
+    log "[INFO] Starting complete DevOps installation."
 
-    # ------------------------------------------
-    # Step 1 - Docker
-    # ------------------------------------------
+    local INSTALL_SCRIPTS=(
+        "docker.sh"
+        "kubernetes.sh"
+        "kubernetes-cluster.sh"
+        "jenkins.sh"
+        "prometheus.sh"
+        "grafana.sh"
+    )
 
-    info "Step 1/7: Installing Docker..."
+    local TOTAL="${#INSTALL_SCRIPTS[@]}"
+    local CURRENT=0
 
-    bash "$SCRIPT_DIR/Scripts/docker.sh"
+    for SCRIPT in "${INSTALL_SCRIPTS[@]}"
+    do
 
-    success "Docker installation completed."
+        ((CURRENT+=1))
 
+        clear
 
-    # ------------------------------------------
-    # Step 2 - Kubernetes Components
-    # ------------------------------------------
+        echo
+        echo "=========================================="
+        echo " COMPLETE DEVOPS INSTALLATION"
+        echo "=========================================="
+        echo
 
-    info "Step 2/7: Installing Kubernetes components..."
+        info "Step $CURRENT/$TOTAL"
+        info "Running: $SCRIPT"
 
-    bash "$SCRIPT_DIR/Scripts/kubernetes.sh"
+        echo
 
-    success "Kubernetes component installation completed."
+        log "[INFO] Step $CURRENT/$TOTAL: Starting $SCRIPT"
 
+        if [[ ! -f "$SCRIPTS_DIR/$SCRIPT" ]]; then
 
-    # ------------------------------------------
-    # Step 3 - Kubernetes Cluster
-    # ------------------------------------------
+            error "Required script not found: $SCRIPT"
 
-    info "Step 3/7: Setting up Kubernetes cluster..."
+            log "[ERROR] Required script missing: $SCRIPT"
 
-    bash "$SCRIPT_DIR/Scripts/kubernetes-cluster.sh"
+            read -rp "Press Enter to return to the main menu..."
 
-    success "Kubernetes cluster setup completed."
+            return 1
 
+        fi
 
-    # ------------------------------------------
-    # Step 4 - Jenkins
-    # ------------------------------------------
+        if bash "$SCRIPTS_DIR/$SCRIPT"; then
 
-    info "Step 4/7: Installing Jenkins..."
-
-    bash "$SCRIPT_DIR/Scripts/jenkins.sh"
-
-    success "Jenkins installation completed."
-
-
-    # ------------------------------------------
-    # Step 5 - Prometheus
-    # ------------------------------------------
-
-    info "Step 5/7: Installing Prometheus..."
-
-    bash "$SCRIPT_DIR/Scripts/prometheus.sh"
-
-    success "Prometheus installation completed."
-
-
-    # ------------------------------------------
-    # Step 6 - Grafana
-    # ------------------------------------------
-
-    info "Step 6/7: Installing Grafana..."
-
-    bash "$SCRIPT_DIR/Scripts/grafana.sh"
-
-    success "Grafana installation completed."
-
-
-    # ------------------------------------------
-    # Step 7 - Verification
-    # ------------------------------------------
-
-    info "Step 7/7: Verifying complete installation..."
-
-    bash "$SCRIPT_DIR/Scripts/verify.sh"
-
-
-    # ------------------------------------------
-    # Installation Complete
-    # ------------------------------------------
-
-    echo
-
-    success "=========================================="
-    success "COMPLETE DEVOPS INSTALLATION FINISHED"
-    success "=========================================="
-
-    echo
-
-    log "Complete DevOps installation completed."
-}
-
-
-# ==========================================
-# Handle User Selection
-# ==========================================
-
-handle_choice() {
-
-    local choice="$1"
-
-    case "$choice" in
-
-        # --------------------------------------
-        # Install Docker
-        # --------------------------------------
-
-        1)
-            bash "$SCRIPT_DIR/Scripts/docker.sh"
-            ;;
-
-
-        # --------------------------------------
-        # Install Kubernetes
-        # --------------------------------------
-
-        2)
-            bash "$SCRIPT_DIR/Scripts/kubernetes.sh"
-            ;;
-
-
-        # --------------------------------------
-        # Setup Kubernetes Cluster
-        # --------------------------------------
-
-        3)
-            bash "$SCRIPT_DIR/Scripts/kubernetes-cluster.sh"
-            ;;
-
-
-        # --------------------------------------
-        # Install Jenkins
-        # --------------------------------------
-
-        4)
-            bash "$SCRIPT_DIR/Scripts/jenkins.sh"
-            ;;
-
-
-        # --------------------------------------
-        # Install Prometheus
-        # --------------------------------------
-
-        5)
-            bash "$SCRIPT_DIR/Scripts/prometheus.sh"
-            ;;
-
-
-        # --------------------------------------
-        # Install Grafana
-        # --------------------------------------
-
-        6)
-            bash "$SCRIPT_DIR/Scripts/grafana.sh"
-            ;;
-
-
-        # --------------------------------------
-        # Install Everything
-        # --------------------------------------
-
-        7)
-            install_everything
-            ;;
-
-
-        # --------------------------------------
-        # Verify Installation
-        # --------------------------------------
-
-        8)
-            bash "$SCRIPT_DIR/Scripts/verify.sh"
-            ;;
-
-
-        # --------------------------------------
-        # Health Check
-        # --------------------------------------
-
-        9)
-            bash "$SCRIPT_DIR/Scripts/health-check.sh"
-            ;;
-
-
-        # --------------------------------------
-        # Uninstall
-        # --------------------------------------
-
-        10)
-            bash "$SCRIPT_DIR/Scripts/uninstall.sh"
-            ;;
-
-
-        # --------------------------------------
-        # Exit
-        # --------------------------------------
-
-        0)
             echo
-            success "Exiting DevOps Auto Installer."
-            exit 0
-            ;;
 
+            success "Step $CURRENT/$TOTAL completed: $SCRIPT"
 
-        # --------------------------------------
-        # Invalid Option
-        # --------------------------------------
+            log "[SUCCESS] Step $CURRENT/$TOTAL completed: $SCRIPT"
 
-        *)
-            warning "Invalid option. Please choose a valid option."
-            ;;
+        else
 
-    esac
+            echo
+
+            error "Installation failed at: $SCRIPT"
+
+            log "[ERROR] Installation failed at: $SCRIPT"
+
+            if whiptail \
+                --title "Installation Failed" \
+                --yesno \
+                "Installation failed while running:
+
+$SCRIPT
+
+Do you want to continue with the remaining components?" \
+                12 70; then
+
+                continue
+
+            else
+
+                read -rp "Press Enter to return to the main menu..."
+
+                return 1
+
+            fi
+
+        fi
+
+        echo
+
+        if [[ "$CURRENT" -lt "$TOTAL" ]]; then
+
+            info "Moving to the next component..."
+
+            sleep 2
+
+        fi
+
+    done
+
+    # ==========================================
+    # Final Verification
+    # ==========================================
+
+    clear
+
+    echo
+    echo "=========================================="
+    echo "       FINAL INSTALLATION VERIFICATION"
+    echo "=========================================="
+    echo
+
+    info "Running complete verification..."
+
+    if [[ -f "$SCRIPTS_DIR/verify.sh" ]]; then
+
+        bash "$SCRIPTS_DIR/verify.sh" || true
+
+    else
+
+        warning "verify.sh was not found."
+
+    fi
+
+    log "[SUCCESS] Complete DevOps installation finished."
+
+    echo
+    success "=========================================="
+    success "COMPLETE INSTALLATION FINISHED"
+    success "=========================================="
+    echo
+
+    read -rp "Press Enter to return to the main menu..."
 }
 
+# ==========================================
+# View Installer Log
+# ==========================================
+
+view_log() {
+
+    local LOG_FILE="$SCRIPT_DIR/Logs/installer.log"
+
+    if [[ ! -f "$LOG_FILE" ]]; then
+
+        whiptail \
+            --title "Installer Log" \
+            --msgbox \
+            "No installer log file was found yet." \
+            10 60
+
+        return
+
+    fi
+
+    whiptail \
+        --title "Installer Log" \
+        --textbox \
+        "$LOG_FILE" \
+        30 100
+}
 
 # ==========================================
-# Main Function
+# Confirm Exit
 # ==========================================
 
-main() {
+confirm_exit() {
 
-    reset_log
+    if whiptail \
+        --title "Exit Installer" \
+        --yesno \
+        "Are you sure you want to exit the DevOps Auto Installer?" \
+        10 60; then
 
-    initialize
+        clear
 
-    log "DevOps Auto Installer started."
+        echo
+        success "Thank you for using DevOps Auto Installer."
+        echo
+
+        log "[INFO] DevOps Auto Installer exited."
+
+        exit 0
+
+    fi
+}
+
+# ==========================================
+# Main Menu
+# ==========================================
+
+show_main_menu() {
 
     while true
     do
 
-        show_header
+        CHOICE=$(whiptail \
+            --title "DevOps Auto Installer" \
+            --menu \
+            "Choose an option:" \
+            25 75 15 \
+            "1" "System Health Check" \
+            "2" "Install Docker" \
+            "3" "Install Kubernetes Components" \
+            "4" "Setup Kubernetes Cluster" \
+            "5" "Install Jenkins" \
+            "6" "Install Prometheus" \
+            "7" "Install Grafana" \
+            "8" "Install Everything" \
+            "9" "Verify Installation" \
+            "10" "Uninstall Components" \
+            "11" "View Installer Log" \
+            "12" "Exit" \
+            3>&1 1>&2 2>&3)
 
-        show_menu
+        EXIT_STATUS=$?
 
-        read -rp "Choose an option: " choice
+        # User pressed Cancel or ESC
+        if [[ "$EXIT_STATUS" -ne 0 ]]; then
 
-        echo
+            confirm_exit
 
-        handle_choice "$choice"
+            continue
 
-        pause
+        fi
+
+        case "$CHOICE" in
+
+            1)
+                run_script "health-check.sh"
+                ;;
+
+            2)
+                confirm_and_run \
+                    "Install Docker" \
+                    "Docker Engine and Docker Compose will be installed." \
+                    "docker.sh"
+                ;;
+
+            3)
+                confirm_and_run \
+                    "Install Kubernetes" \
+                    "kubeadm, kubelet and kubectl will be installed." \
+                    "kubernetes.sh"
+                ;;
+
+            4)
+                confirm_and_run \
+                    "Setup Kubernetes Cluster" \
+                    "This will initialize and configure the Kubernetes cluster.
+
+Make sure the required system resources are available." \
+                    "kubernetes-cluster.sh"
+                ;;
+
+            5)
+                confirm_and_run \
+                    "Install Jenkins" \
+                    "Java and Jenkins LTS will be installed.
+
+Jenkins will be available on port 8080." \
+                    "jenkins.sh"
+                ;;
+
+            6)
+                confirm_and_run \
+                    "Install Prometheus" \
+                    "Prometheus monitoring server will be installed.
+
+Prometheus will be available on port 9090." \
+                    "prometheus.sh"
+                ;;
+
+            7)
+                confirm_and_run \
+                    "Install Grafana" \
+                    "Grafana monitoring dashboard will be installed.
+
+Grafana will be available on port 3000." \
+                    "grafana.sh"
+                ;;
+
+            8)
+                install_everything
+                ;;
+
+            9)
+                run_script "verify.sh"
+                ;;
+
+            10)
+                confirm_and_run \
+                    "Uninstall Components" \
+                    "WARNING!
+
+This option may remove installed DevOps components and services.
+
+Review the uninstall options carefully." \
+                    "uninstall.sh"
+                ;;
+
+            11)
+                view_log
+                ;;
+
+            12)
+                confirm_exit
+                ;;
+
+        esac
 
     done
 }
 
+# ==========================================
+# Main
+# ==========================================
+
+main() {
+
+    check_whiptail
+
+    initialize
+
+    log "[INFO] DevOps Auto Installer started."
+
+    show_main_menu
+}
 
 # ==========================================
 # Start Installer

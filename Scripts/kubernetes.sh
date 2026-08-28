@@ -6,6 +6,10 @@
 
 set -e
 
+# ==========================================
+# Load Common Functions
+# ==========================================
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "$SCRIPT_DIR/common.sh"
@@ -16,20 +20,71 @@ source "$SCRIPT_DIR/common.sh"
 
 check_supported_os() {
 
+    info "Checking operating system compatibility..."
+
     if [[ "$OS_NAME" != "ubuntu" ]]; then
+
         error "Kubernetes installer currently supports Ubuntu only."
+        error "Detected OS: ${OS_NAME:-Unknown}"
+
         exit 1
+
     fi
 
     case "$OS_VERSION" in
+
         22.04|24.04|26.04)
-            success "Supported Ubuntu version: $OS_VERSION"
+
+            success "Supported Ubuntu version detected: $OS_VERSION"
             ;;
+
         *)
+
             error "Unsupported Ubuntu version: $OS_VERSION"
+            error "Supported versions: Ubuntu 22.04, 24.04, and 26.04"
+
             exit 1
             ;;
+
     esac
+}
+
+# ==========================================
+# Check Existing Installation
+# ==========================================
+
+check_existing_kubernetes() {
+
+    info "Checking existing Kubernetes installation..."
+
+    local installed=0
+
+    for component in kubeadm kubelet kubectl
+    do
+
+        if command_exists "$component"; then
+
+            success "$component is already installed."
+
+            installed=$((installed + 1))
+
+        else
+
+            info "$component is not installed."
+
+        fi
+
+    done
+
+    if [[ "$installed" -eq 3 ]]; then
+
+        success "All Kubernetes components are already installed."
+
+        return 0
+
+    fi
+
+    return 1
 }
 
 # ==========================================
@@ -42,12 +97,18 @@ configure_swap() {
 
     if swapon --show | grep -q .; then
 
-        warning "Swap is enabled."
+        warning "Swap is enabled. Disabling swap..."
 
         swapoff -a
 
         if grep -qE '^[^#].*\sswap\s' /etc/fstab; then
-            sed -i -E 's/^([^#].*\sswap\s.*)$/#\1/' /etc/fstab
+
+            cp /etc/fstab /etc/fstab.k8s-backup
+
+            sed -i -E \
+                's/^([^#].*\sswap\s.*)$/#\1/' \
+                /etc/fstab
+
         fi
 
         success "Swap disabled."
@@ -76,6 +137,10 @@ EOF
     modprobe br_netfilter
 
     success "Kernel modules configured."
+
+    info "Loaded modules:"
+
+    lsmod | grep -E "overlay|br_netfilter" || true
 }
 
 # ==========================================
@@ -95,6 +160,13 @@ EOF
     sysctl --system >/dev/null
 
     success "Kernel network settings configured."
+
+    info "Verifying required sysctl settings..."
+
+    sysctl \
+        net.bridge.bridge-nf-call-iptables \
+        net.bridge.bridge-nf-call-ip6tables \
+        net.ipv4.ip_forward
 }
 
 # ==========================================
@@ -106,9 +178,12 @@ configure_containerd() {
     info "Configuring containerd for Kubernetes..."
 
     if ! command_exists containerd; then
+
         error "containerd is not installed."
-        error "Install Docker/containerd before installing Kubernetes."
+        error "Install Docker before installing Kubernetes."
+
         exit 1
+
     fi
 
     info "Containerd version: $(containerd --version)"
@@ -119,73 +194,100 @@ configure_containerd() {
 
     # Backup existing configuration
     if [[ -f /etc/containerd/config.toml ]]; then
+
+        BACKUP_FILE="/etc/containerd/config.toml.backup.$(date +%Y%m%d-%H%M%S)"
+
         cp \
             /etc/containerd/config.toml \
-            /etc/containerd/config.toml.backup
+            "$BACKUP_FILE"
+
+        info "Existing containerd configuration backed up."
+
     fi
 
-    # Generate clean containerd configuration
+    # Generate clean configuration
+    info "Generating containerd configuration..."
+
     containerd config default > /etc/containerd/config.toml
 
-    # Enable systemd cgroups for Kubernetes
+    # Enable systemd cgroups
     sed -i \
         's/SystemdCgroup = false/SystemdCgroup = true/' \
         /etc/containerd/config.toml
 
-    # Ensure CRI plugin is not disabled
+    # Ensure CRI plugin is enabled
     sed -i \
         '/disabled_plugins.*cri/d' \
         /etc/containerd/config.toml
 
     systemctl daemon-reload
-    systemctl restart containerd
+
     systemctl enable containerd
 
-    # Wait for containerd
-    info "Waiting for containerd to start..."
+    systemctl restart containerd
 
-    for i in {1..6}; do
+    info "Waiting for containerd service..."
+
+    local started=false
+
+    for i in {1..12}
+    do
 
         if systemctl is-active --quiet containerd; then
-            success "Containerd service is running."
+
+            started=true
             break
+
         fi
 
         sleep 5
+
     done
 
-    if ! systemctl is-active --quiet containerd; then
+    if [[ "$started" == "true" ]]; then
+
+        success "Containerd service is running."
+
+    else
+
         error "Containerd failed to start."
-        systemctl status containerd --no-pager
+
+        systemctl status containerd --no-pager || true
+
         exit 1
+
     fi
-
-  # ==========================================
-# Verify Containerd CRI Support
-# ==========================================
-
-info "Verifying containerd CRI support..."
-
-if ctr plugins ls 2>/dev/null | \
-    awk '$1 ~ /cri/ && $NF == "ok" { found=1 } END { exit !found }'
-then
-
-    success "Containerd CRI plugin is available."
-
-else
-
-    error "Containerd CRI plugin is not available."
-
-    info "CRI plugin status:"
-    ctr plugins ls 2>/dev/null | grep -i cri || true
-
-    exit 1
-
-fi
 }
 
 # ==========================================
-# Install Kubernetes Repository
+# Verify Containerd CRI Support
+# ==========================================
+
+verify_containerd_cri() {
+
+    info "Verifying containerd CRI support..."
+
+    if ctr plugins ls 2>/dev/null | \
+        awk '$1 ~ /cri/ && $NF == "ok" { found=1 } END { exit !found }'
+    then
+
+        success "Containerd CRI plugin is available."
+
+    else
+
+        error "Containerd CRI plugin is not available."
+
+        info "CRI plugin status:"
+
+        ctr plugins ls 2>/dev/null | grep -i cri || true
+
+        exit 1
+
+    fi
+}
+
+# ==========================================
+# Configure Kubernetes Repository
 # ==========================================
 
 configure_kubernetes_repository() {
@@ -195,20 +297,22 @@ configure_kubernetes_repository() {
     apt-get update
 
     apt-get install -y \
-        apt-transport-https \
         ca-certificates \
         curl \
         gpg
 
     mkdir -p -m 755 /etc/apt/keyrings
 
+    # Download repository key
     curl -fsSL \
         "https://pkgs.k8s.io/core:/stable:/v${KUBERNETES_MINOR_VERSION}/deb/Release.key" |
         gpg --dearmor \
+        --yes \
         -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
     chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
+    # Configure repository
     echo \
         "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${KUBERNETES_MINOR_VERSION}/deb/ /" \
         > /etc/apt/sources.list.d/kubernetes.list
@@ -226,11 +330,19 @@ install_kubernetes() {
 
     info "Installing Kubernetes components..."
 
-    apt-get install -y kubelet kubeadm kubectl
+    apt-get install -y \
+        kubelet \
+        kubeadm \
+        kubectl
 
-    apt-mark hold kubelet kubeadm kubectl
+    apt-mark hold \
+        kubelet \
+        kubeadm \
+        kubectl
 
-    success "kubelet, kubeadm and kubectl installed."
+    success "Kubernetes components installed."
+
+    success "kubeadm, kubelet and kubectl are held from automatic upgrades."
 }
 
 # ==========================================
@@ -239,16 +351,14 @@ install_kubernetes() {
 
 enable_kubelet() {
 
-    info "Enabling kubelet..."
+    info "Enabling kubelet service..."
 
     systemctl enable kubelet
 
     success "Kubelet service enabled."
 
-    info "Note: kubelet may not remain active until the Kubernetes cluster is initialized."
+    info "Note: kubelet may restart or remain inactive until kubeadm init is completed."
 }
-
-
 
 # ==========================================
 # Verify Kubernetes
@@ -260,35 +370,82 @@ verify_kubernetes() {
 
     info "Verifying Kubernetes installation..."
 
-    if ! command_exists kubeadm; then
-        error "kubeadm was not found."
-        exit 1
-    fi
+    local failed=0
 
-    if ! command_exists kubelet; then
-        error "kubelet was not found."
-        exit 1
-    fi
+    for component in kubeadm kubelet kubectl
+    do
 
-    if ! command_exists kubectl; then
-        error "kubectl was not found."
+        if command_exists "$component"; then
+
+            success "$component command found."
+
+        else
+
+            error "$component command was not found."
+
+            failed=1
+
+        fi
+
+    done
+
+    if [[ "$failed" -ne 0 ]]; then
+
         exit 1
+
     fi
 
     echo
+
+    echo "Kubernetes Versions:"
+
+    echo
+
     kubeadm version
+
     kubectl version --client
+
     kubelet --version
 
     echo
 
     success "Kubernetes components verified."
-
-    info "Kubernetes cluster has NOT been initialized."
-    info "Run the cluster initialization phase separately."
 }
 
+# ==========================================
+# Display Summary
+# ==========================================
 
+show_summary() {
+
+    echo
+
+    echo "=========================================="
+    echo "       KUBERNETES INSTALLATION SUMMARY"
+    echo "=========================================="
+
+    echo "Kubelet Service : $(get_service_status kubelet)"
+
+    echo
+
+    if command_exists kubeadm; then
+
+        echo "kubeadm Version  : $(kubeadm version -o short 2>/dev/null || echo "Unknown")"
+
+    fi
+
+    if command_exists kubectl; then
+
+        echo "kubectl Version  : $(kubectl version --client --output=yaml 2>/dev/null | grep gitVersion | head -1 | awk '{print $2}' || echo "Installed")"
+
+    fi
+
+    echo "Containerd       : $(get_service_status containerd)"
+
+    echo "=========================================="
+
+    echo
+}
 
 # ==========================================
 # Main
@@ -298,32 +455,72 @@ main() {
 
     initialize
 
+    echo
+
+    echo "=========================================="
+    echo "       KUBERNETES COMPONENT INSTALLER"
+    echo "=========================================="
+
+    echo
+
     info "Starting Kubernetes installation..."
 
     check_supported_os
 
+    # Configure system requirements
     configure_swap
 
     configure_kernel
 
     configure_sysctl
 
+    # Configure container runtime
     configure_containerd
 
+    verify_containerd_cri
+
+    # Check existing installation
+    if check_existing_kubernetes; then
+
+        info "Kubernetes components are already installed."
+
+        verify_kubernetes
+
+        show_summary
+
+        log "[SUCCESS] Existing Kubernetes installation verified."
+
+        return 0
+
+    fi
+
+    # Configure repository
     configure_kubernetes_repository
 
+    # Install components
     install_kubernetes
 
+    # Enable kubelet
     enable_kubelet
 
+    # Verify
     verify_kubernetes
 
-    log "Kubernetes installation completed."
+    # Summary
+    show_summary
+
+    log "[SUCCESS] Kubernetes installation completed successfully."
 
     echo
+
     success "=========================================="
-    success "Kubernetes installation completed."
+    success "KUBERNETES INSTALLATION COMPLETED"
     success "=========================================="
+
+    echo
+
+    info "Next step:"
+    info "Run Kubernetes Cluster Setup from the main menu."
 }
 
 main
