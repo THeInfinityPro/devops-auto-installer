@@ -299,29 +299,35 @@ Do you want to continue with the remaining components?" \
 # View Installer Log
 # ==========================================
 
-view_log() {
+view_installer_log() {
 
-    local LOG_FILE="$SCRIPT_DIR/Logs/installer.log"
+    if [[ -f "$LOG_FILE" ]]; then
 
-    if [[ ! -f "$LOG_FILE" ]]; then
+        if [[ -s "$LOG_FILE" ]]; then
+
+            whiptail \
+                --title "Installer Log" \
+                --textbox "$LOG_FILE" \
+                25 100
+
+        else
+
+            whiptail \
+                --title "Installer Log" \
+                --msgbox "The installer log exists but no activity has been recorded yet." \
+                10 70
+
+        fi
+
+    else
 
         whiptail \
             --title "Installer Log" \
-            --msgbox \
-            "No installer log file was found yet." \
-            10 60
-
-        return
+            --msgbox "No installer log file was found yet." \
+            10 70
 
     fi
-
-    whiptail \
-        --title "Installer Log" \
-        --textbox \
-        "$LOG_FILE" \
-        30 100
 }
-
 # ==========================================
 # Confirm Exit
 # ==========================================
@@ -462,7 +468,7 @@ Review the uninstall options carefully." \
                 ;;
 
             11)
-                view_log
+                view_installer_log
                 ;;
 
             12)

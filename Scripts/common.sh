@@ -4,6 +4,22 @@
 # DevOps Auto Installer - Common Functions
 # ==========================================
 
+
+# ==========================================
+# Project Paths
+# ==========================================
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+LOG_DIR="$PROJECT_ROOT/Logs"
+LOG_FILE="$LOG_DIR/installer.log"
+
+# Create log directory automatically
+mkdir -p "$LOG_DIR"
+
+# Create log file automatically
+touch "$LOG_FILE"
+
 # ==========================================
 # Project Directories
 # ==========================================
