@@ -2,7 +2,9 @@
 
 A Bash-based automation tool that installs, configures, verifies, monitors, and removes a complete DevOps environment on Ubuntu.
 
-The project provides an interactive Whiptail-based menu for managing commonly used DevOps tools.
+## 📦 Current Version
+
+**v1.1.0**
 
 ## 🛠️ Supported DevOps Tools
 

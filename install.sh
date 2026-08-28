@@ -1,7 +1,10 @@
 #!/bin/bash
 
+VERSION="1.1.0"
+
 # ==========================================
 # DevOps Auto Installer
+# Version 1.1.0
 # Main Control Panel
 # ==========================================
 
